@@ -104,20 +104,20 @@
   - [x] 3.14 Configure webhook signature verification using HMAC-SHA256
   - [x] 3.15 Implement JSON schema validation and rate limiting for security
 
-- [ ] 4.0 Build knowledge retrieval and similarity search system
-  - [ ] 4.1 Configure OpenAI API integration for text-embedding-3-small model
-  - [ ] 4.2 Implement embedding generation node with 1536-dimensional vectors
-  - [ ] 4.3 Create batch embedding processor for 50-100 documents (50% cost savings)
-  - [ ] 4.4 Implement vector similarity search query using pgvector <-> operator
-  - [ ] 4.5 Create keyword search query using pg_trgm similarity function
-  - [ ] 4.6 Implement Reciprocal Rank Fusion: combined_score = sum(1/(60 + vector_rank)) + sum(1/(60 + keyword_rank))
-  - [ ] 4.7 Create metadata filtering for category, property_id, date range, success_rate >80%
-  - [ ] 4.8 Implement top-5 knowledge entry selection from fusion results
-  - [ ] 4.9 Create Merge node combining ticket data with retrieved knowledge
-  - [ ] 4.10 Calculate and include retrieval confidence scores (highest similarity)
-  - [ ] 4.11 Implement Redis caching layer with 1-hour TTL for frequent queries
-  - [ ] 4.12 Create connection pooling configuration with pgBouncer
-  - [ ] 4.13 Target <200ms query latency optimization
+- [x] 4.0 Build knowledge retrieval and similarity search system
+  - [x] 4.1 Configure OpenAI API integration for text-embedding-3-small model
+  - [x] 4.2 Implement embedding generation node with 1536-dimensional vectors
+  - [x] 4.3 Create batch embedding processor for 50-100 documents (50% cost savings)
+  - [x] 4.4 Implement vector similarity search query using pgvector <-> operator
+  - [x] 4.5 Create keyword search query using pg_trgm similarity function
+  - [x] 4.6 Implement Reciprocal Rank Fusion: combined_score = sum(1/(60 + vector_rank)) + sum(1/(60 + keyword_rank))
+  - [x] 4.7 Create metadata filtering for category, property_id, date range, success_rate >80%
+  - [x] 4.8 Implement top-5 knowledge entry selection from fusion results
+  - [x] 4.9 Create Merge node combining ticket data with retrieved knowledge
+  - [x] 4.10 Calculate and include retrieval confidence scores (highest similarity)
+  - [x] 4.11 Implement Redis caching layer with 1-hour TTL for frequent queries
+  - [x] 4.12 Create connection pooling configuration with pgBouncer
+  - [x] 4.13 Target <200ms query latency optimization
   - [ ] 4.14 Implement lazy loading for knowledge content (summaries in metadata)
   - [ ] 4.15 Create fallback to keyword-only search if vector search fails
 
