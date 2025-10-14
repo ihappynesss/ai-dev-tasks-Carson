@@ -1,0 +1,548 @@
+{
+  "name": "Manual Trigger - On-Demand Processing",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "manual-trigger-node",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ticket-id-input",
+              "name": "ticketId",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "operation-type",
+              "name": "operation",
+              "value": "reprocess",
+              "type": "string"
+            },
+            {
+              "id": "force-path",
+              "name": "forcePath",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "skip-cache",
+              "name": "skipCache",
+              "value": false,
+              "type": "boolean"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-parameters",
+      "name": "Set Parameters",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [450, 300],
+      "notes": "Edit these values before running:\n- ticketId: Freshdesk ticket ID to process\n- operation: 'reprocess', 'regenerate', 'escalate', 'close'\n- forcePath: Override routing (e.g., 'auto-respond', 'generate-draft')\n- skipCache: Bypass Redis cache for fresh results"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.ticketId }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.FRESHDESK_DOMAIN }}/api/v2/tickets/{{ $json.ticketId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "freshdeskApi",
+        "options": {}
+      },
+      "id": "fetch-ticket",
+      "name": "Freshdesk - Fetch Ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 250]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.FRESHDESK_DOMAIN }}/api/v2/tickets/{{ $json.ticketId }}/conversations",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "freshdeskApi",
+        "options": {}
+      },
+      "id": "fetch-conversations",
+      "name": "Freshdesk - Fetch Conversations",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 350]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-ticket-data",
+      "name": "Merge Ticket Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $('Set Parameters').item.json.operation }}",
+              "value2": "reprocess"
+            }
+          ]
+        }
+      },
+      "id": "operation-switch",
+      "name": "Operation Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Reprocess ticket through full pipeline\nconst ticket = $input.first().json;\nconst conversations = $input.last().json;\nconst params = $('Set Parameters').item.json;\n\n// Normalize ticket text\nfunction stripHtml(html) {\n  if (!html) return '';\n  return html.replace(/<[^>]*>/g, '')\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&amp;/g, '&')\n    .trim();\n}\n\nconst subject = stripHtml(ticket.subject || '');\nconst description = stripHtml(ticket.description || '');\nconst normalizedText = `${subject}\\n\\n${description}`.trim();\n\nreturn {\n  ticketId: ticket.id,\n  subject: subject,\n  description: description,\n  normalizedText: normalizedText,\n  priority: ticket.priority,\n  status: ticket.status,\n  requester: ticket.requester || {},\n  customFields: ticket.custom_fields || {},\n  conversations: conversations || [],\n  \n  // Manual processing flags\n  manualProcessing: true,\n  forcePath: params.forcePath || null,\n  skipCache: params.skipCache || false,\n  operation: params.operation,\n  processedAt: new Date().toISOString()\n};"
+      },
+      "id": "reprocess-ticket",
+      "name": "Reprocess Ticket",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.OPENAI_API_URL || 'https://api.openai.com' }}/v1/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENAI_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\"model\": \"text-embedding-3-small\", \"input\": $json.normalizedText} }}",
+        "options": {}
+      },
+      "id": "generate-embedding-manual",
+      "name": "Generate Embedding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Manual hybrid search with optional category filter\nWITH vector_search AS (\n  SELECT\n    id, title, content, metadata,\n    embedding <-> $1::vector AS distance,\n    1 - (embedding <-> $1::vector) AS similarity\n  FROM knowledge_base\n  WHERE metadata->>'status' = 'active'\n  ORDER BY distance\n  LIMIT 10\n),\nkeyword_search AS (\n  SELECT\n    id, title, content, metadata,\n    similarity(content, $2) AS keyword_score\n  FROM knowledge_base\n  WHERE metadata->>'status' = 'active'\n    AND content % $2\n  ORDER BY keyword_score DESC\n  LIMIT 10\n)\nSELECT\n  kb.id,\n  kb.title,\n  kb.content,\n  kb.metadata,\n  COALESCE(vs.similarity, 0) AS vector_similarity,\n  COALESCE(ks.keyword_score, 0) AS keyword_score,\n  (\n    COALESCE(1.0 / (60 + vs_rank), 0) +\n    COALESCE(1.0 / (60 + ks_rank), 0)\n  ) AS combined_score\nFROM knowledge_base kb\nLEFT JOIN (\n  SELECT id, similarity, ROW_NUMBER() OVER (ORDER BY distance) AS vs_rank\n  FROM vector_search\n) vs ON kb.id = vs.id\nLEFT JOIN (\n  SELECT id, keyword_score, ROW_NUMBER() OVER (ORDER BY keyword_score DESC) AS ks_rank\n  FROM keyword_search\n) ks ON kb.id = ks.id\nWHERE vs.id IS NOT NULL OR ks.id IS NOT NULL\nORDER BY combined_score DESC\nLIMIT 5;",
+        "options": {
+          "queryReplacement": "={{ [$json.data[0].embedding, $('Reprocess Ticket').item.json.normalizedText] }}"
+        }
+      },
+      "id": "search-knowledge-manual",
+      "name": "Search Knowledge Base",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1850, 200],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "placeholder",
+              "name": "response",
+              "value": "Generate AI response with Claude - Placeholder for Task 6.0",
+              "type": "string"
+            },
+            {
+              "id": "confidence",
+              "name": "confidence",
+              "value": "={{ $json[0]?.vector_similarity || 0 }}",
+              "type": "number"
+            },
+            {
+              "id": "knowledge-used",
+              "name": "knowledgeUsed",
+              "value": "={{ $json.map(k => k.title).join(', ') }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "generate-response-manual",
+      "name": "Generate AI Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [2050, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Regenerate response with different parameters or model\nconst ticket = $input.first().json;\nconst params = $('Set Parameters').item.json;\n\nconsole.log('Regenerating response for ticket:', ticket.id);\nconsole.log('Force path:', params.forcePath);\n\nreturn {\n  ticketId: ticket.id,\n  operation: 'regenerate',\n  message: 'Response regeneration - Will implement Claude API call with different parameters',\n  forcePath: params.forcePath,\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "regenerate-response",
+      "name": "Regenerate Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.FRESHDESK_DOMAIN }}/api/v2/tickets/{{ $('Set Parameters').item.json.ticketId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\"status\": 2, \"priority\": 3, \"tags\": [\"manual-escalation\"], \"internal_note\": \"Manually escalated via n8n workflow at \" + new Date().toISOString()} }}",
+        "options": {}
+      },
+      "id": "escalate-ticket-manual",
+      "name": "Escalate Ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 400],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "freshdesk-api-auth",
+          "name": "Freshdesk API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.FRESHDESK_DOMAIN }}/api/v2/tickets/{{ $('Set Parameters').item.json.ticketId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\"status\": 5, \"tags\": [\"manual-close\"], \"internal_note\": \"Manually closed via n8n workflow at \" + new Date().toISOString()} }}",
+        "options": {}
+      },
+      "id": "close-ticket-manual",
+      "name": "Close Ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 500],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "freshdesk-api-auth",
+          "name": "Freshdesk API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "merge-results",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [2250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate summary report for manual processing\nconst results = $input.all();\nconst params = $('Set Parameters').item.json;\n\nconst summary = {\n  operation: params.operation,\n  ticketId: params.ticketId,\n  timestamp: new Date().toISOString(),\n  \n  results: results.map(r => r.json),\n  \n  summary: `Manual processing completed successfully for ticket ${params.ticketId}`,\n  \n  details: {\n    operation: params.operation,\n    forcePath: params.forcePath || 'none',\n    skipCache: params.skipCache,\n    processingTime: new Date().toISOString()\n  }\n};\n\nreturn summary;"
+      },
+      "id": "generate-summary",
+      "name": "Generate Summary Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "system_metrics",
+        "columns": "metric_name, metric_value, category, metadata, timestamp",
+        "additionalFields": {}
+      },
+      "id": "log-manual-processing",
+      "name": "Log Manual Processing",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2650, 300],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Parameters",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Parameters": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Freshdesk - Fetch Ticket",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Freshdesk - Fetch Conversations",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Freshdesk - Fetch Ticket": {
+      "main": [
+        [
+          {
+            "node": "Merge Ticket Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Freshdesk - Fetch Conversations": {
+      "main": [
+        [
+          {
+            "node": "Merge Ticket Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Ticket Data": {
+      "main": [
+        [
+          {
+            "node": "Operation Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Operation Switch": {
+      "main": [
+        [
+          {
+            "node": "Reprocess Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Regenerate Response",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Escalate Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Close Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reprocess Ticket": {
+      "main": [
+        [
+          {
+            "node": "Generate Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Embedding": {
+      "main": [
+        [
+          {
+            "node": "Search Knowledge Base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Knowledge Base": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Response": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Regenerate Response": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Escalate Ticket": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Close Ticket": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Merge Results": {
+      "main": [
+        [
+          {
+            "node": "Generate Summary Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Summary Report": {
+      "main": [
+        [
+          {
+            "node": "Log Manual Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "1.0.0",
+  "id": "manual-trigger",
+  "meta": {
+    "instanceId": "nsw-strata-automation"
+  },
+  "tags": [
+    {
+      "name": "development",
+      "id": "dev"
+    },
+    {
+      "name": "manual",
+      "id": "manual"
+    },
+    {
+      "name": "testing",
+      "id": "testing"
+    }
+  ]
+}

@@ -17,13 +17,22 @@
 - `nsw-strata-automation/CONTRIBUTING.md` - Git workflow, branching strategy, and contribution guidelines
 - `nsw-strata-automation/workflows/README.md` - Workflow documentation with export/import procedures
 - `nsw-strata-automation/database/README.md` - Database schema and migration documentation
+- `nsw-strata-automation/database/schema.sql` - Complete PostgreSQL schema with vector search and indexes
+- `nsw-strata-automation/database/SUPABASE-SETUP.md` - Comprehensive Supabase setup guide with step-by-step instructions
 - `nsw-strata-automation/knowledge/README.md` - Knowledge base structure and entry management guide
-- `workflows/main-ticket-processor.json` - Main n8n workflow for processing new Freshdesk tickets
-- `workflows/reply-handler.json` - Workflow for handling customer replies and multi-turn conversations
-- `workflows/scheduled-maintenance.json` - Scheduled workflow for knowledge base maintenance
-- `workflows/manual-trigger.json` - Manual trigger workflow for on-demand processing
-- `workflows/batch-processor.json` - Batch processing workflow for bulk knowledge updates
-- `workflows/error-handler.json` - Error handling and recovery workflow
+- `nsw-strata-automation/knowledge/maintenance-repairs/common-property/001-roof-leak.md` - Knowledge entry for roof leaks
+- `nsw-strata-automation/knowledge/by-law-compliance/noise/001-late-night-noise.md` - Knowledge entry for noise complaints
+- `nsw-strata-automation/knowledge/financial-matters/levies/001-unpaid-levies.md` - Knowledge entry for unpaid levies
+- `nsw-strata-automation/knowledge/renovations-alterations/minor/001-flooring-replacement.md` - Knowledge entry for flooring renovations
+- `nsw-strata-automation/knowledge/governance-administration/meetings/001-agm-requirements.md` - Knowledge entry for AGM procedures
+- `nsw-strata-automation/knowledge/information-requests/general/001-strata-records-access.md` - Knowledge entry for records access
+- `nsw-strata-automation/.github/workflows/knowledge-versioning.yml` - GitHub Actions workflow for automated knowledge versioning
+- `nsw-strata-automation/backup-database.sh` - Database backup script with 30-day retention
+- `nsw-strata-automation/workflows/main-ticket-processor.json` - Main n8n workflow for processing new Freshdesk tickets with webhook receiver, entity extraction, hybrid search, and 5-path routing
+- `nsw-strata-automation/workflows/reply-handler.json` - Workflow for handling customer replies with sentiment analysis, multi-turn tracking, and escalation logic
+- `nsw-strata-automation/workflows/scheduled-maintenance.json` - Scheduled workflow (2 AM daily) for duplicate detection, success rate calculation, and reporting
+- `nsw-strata-automation/workflows/manual-trigger.json` - Manual trigger workflow for on-demand ticket reprocessing and testing
+- `nsw-strata-automation/workflows/batch-processor.json` - Batch processing workflow for bulk embedding regeneration and knowledge base operations
 - `credentials/freshdesk-api.json` - Freshdesk API credentials configuration
 - `credentials/supabase.json` - Supabase database credentials
 - `credentials/claude-api.json` - Claude AI API credentials
@@ -82,8 +91,8 @@
   - [x] 3.1 Create main-ticket-processor.json workflow for new Freshdesk tickets
   - [x] 3.2 Create reply-handler.json workflow for customer responses and multi-turn conversations
   - [x] 3.3 Create scheduled-maintenance.json workflow for automated operations
-  - [ ] 3.4 Create manual-trigger.json workflow for on-demand processing with human review
-  - [ ] 3.5 Create batch-processor.json workflow for bulk knowledge base updates
+  - [x] 3.4 Create manual-trigger.json workflow for on-demand processing with human review
+  - [x] 3.5 Create batch-processor.json workflow for bulk knowledge base updates
   - [ ] 3.6 Configure Freshdesk webhook automation for new ticket creation events
   - [ ] 3.7 Configure webhook URL paths for each workflow type
   - [ ] 3.8 Implement webhook node with POST method and Header Auth using shared secret

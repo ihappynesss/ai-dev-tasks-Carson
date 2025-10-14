@@ -1,5 +1,3 @@
-version: '3.8'
-
 # Production-style Queue Mode Configuration
 # This extends docker-compose.yml with queue mode enabled
 # Usage: docker-compose -f docker-compose.yml -f docker-compose.queue.yml up -d
@@ -49,6 +47,9 @@ services:
 
       # Logging
       - N8N_LOG_LEVEL=info
+
+      # Skip migrations (main instance handles this)
+      - N8N_SKIP_MIGRATIONS=true
     volumes:
       - n8n_data:/home/node/.n8n
       - ./workflows:/home/node/.n8n/workflows
@@ -88,6 +89,9 @@ services:
 
       # Logging
       - N8N_LOG_LEVEL=info
+
+      # Skip migrations (main instance handles this)
+      - N8N_SKIP_MIGRATIONS=true
     volumes:
       - n8n_data:/home/node/.n8n
       - ./workflows:/home/node/.n8n/workflows

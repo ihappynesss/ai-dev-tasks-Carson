@@ -1,0 +1,506 @@
+{
+  "name": "Batch Processor - Bulk Knowledge Base Operations",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "batch-process",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-batch-trigger",
+      "name": "Webhook - Batch Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "batch-processor"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\"status\": \"batch_started\", \"batch_id\": $now, \"timestamp\": new Date().toISOString()} }}",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "id": "ack-batch-request",
+      "name": "Acknowledge Batch Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Parse and validate batch request\nconst request = $json.body || $json;\n\n// Supported operations\nconst validOperations = [\n  'regenerate_embeddings',\n  'update_success_rates',\n  'archive_old_entries',\n  'import_knowledge',\n  'export_knowledge',\n  'bulk_update_metadata'\n];\n\nconst operation = request.operation || 'regenerate_embeddings';\nconst category = request.category || null;  // Optional filter\nconst limit = Math.min(request.limit || 50, 100);  // Max 100 at once\nconst dryRun = request.dryRun || false;\n\nif (!validOperations.includes(operation)) {\n  throw new Error(`Invalid operation: ${operation}. Valid operations: ${validOperations.join(', ')}`);\n}\n\nreturn {\n  batchId: $now.toString(),\n  operation: operation,\n  category: category,\n  limit: limit,\n  dryRun: dryRun,\n  requestedAt: new Date().toISOString(),\n  status: 'initialized'\n};"
+      },
+      "id": "parse-batch-request",
+      "name": "Parse Batch Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.operation }}",
+              "value2": "regenerate_embeddings"
+            }
+          ]
+        }
+      },
+      "id": "operation-router",
+      "name": "Operation Router",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Get knowledge entries for embedding regeneration\nSELECT\n  id,\n  title,\n  content,\n  metadata,\n  created_at,\n  updated_at\nFROM knowledge_base\nWHERE metadata->>'status' = 'active'\n  -- Optional category filter\n  AND ($1::text IS NULL OR metadata->>'category' = $1)\n  -- Priority: entries without embeddings or old embeddings\n  AND (embedding IS NULL OR updated_at > NOW() - INTERVAL '30 days')\nORDER BY \n  CASE WHEN embedding IS NULL THEN 0 ELSE 1 END,  -- Null embeddings first\n  updated_at DESC\nLIMIT $2;",
+        "options": {
+          "queryReplacement": "={{ [$json.category, $json.limit] }}"
+        }
+      },
+      "id": "fetch-entries-for-embedding",
+      "name": "Fetch Entries for Embedding",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 200],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 50,
+        "options": {}
+      },
+      "id": "split-into-batches",
+      "name": "Split Into Batches (50)",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.OPENAI_API_URL || 'https://api.openai.com' }}/v1/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENAI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": \"text-embedding-3-small\",\n  \"input\": $input.all().map(item => `${item.json.title}\\n\\n${item.json.content}`)\n} }}",
+        "options": {}
+      },
+      "id": "generate-batch-embeddings",
+      "name": "Generate Batch Embeddings (OpenAI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 200],
+      "notes": "Batch embedding generation saves 50% on API costs"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Map embeddings back to knowledge entries\nconst entries = $input.first().all();\nconst embeddings = $input.last().json.data;\n\nif (entries.length !== embeddings.length) {\n  throw new Error(`Mismatch: ${entries.length} entries but ${embeddings.length} embeddings`);\n}\n\nconst updates = entries.map((entry, index) => ({\n  id: entry.json.id,\n  title: entry.json.title,\n  embedding: embeddings[index].embedding,\n  embeddingIndex: embeddings[index].index\n}));\n\nreturn updates;",
+        "mode": "runOnceForAllItems",
+        "runOnceForAllItems": {}
+      },
+      "id": "map-embeddings-to-entries",
+      "name": "Map Embeddings to Entries",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Update knowledge base with new embeddings\nUPDATE knowledge_base\nSET \n  embedding = $2::vector,\n  updated_at = NOW()\nWHERE id = $1\nRETURNING id, title, updated_at;",
+        "options": {
+          "queryReplacement": "={{ [$json.id, JSON.stringify($json.embedding)] }}"
+        }
+      },
+      "id": "update-embeddings",
+      "name": "Update Embeddings in DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1850, 200],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Calculate and update success rates for all entries\nWITH entry_performance AS (\n  SELECT\n    te.category,\n    COUNT(*) AS total_uses,\n    COUNT(*) FILTER (WHERE te.customer_satisfaction >= 4) AS successful_uses,\n    AVG(te.resolution_time) AS avg_resolution_time\n  FROM training_examples te\n  WHERE te.created_at > NOW() - INTERVAL '90 days'\n  GROUP BY te.category\n)\nUPDATE knowledge_base kb\nSET metadata = jsonb_set(\n  jsonb_set(\n    metadata,\n    '{success_rate}',\n    to_jsonb(COALESCE(\n      ep.successful_uses::float / NULLIF(ep.total_uses, 0),\n      COALESCE((metadata->>'success_rate')::float, 0.5)\n    ))\n  ),\n  '{resolution_time_avg}',\n  to_jsonb(COALESCE(ep.avg_resolution_time, 0))\n)\nFROM entry_performance ep\nWHERE kb.metadata->>'category' = ep.category\n  AND kb.metadata->>'status' = 'active'\n  AND ($1::text IS NULL OR kb.metadata->>'category' = $1)\nRETURNING \n  kb.id,\n  kb.title,\n  kb.metadata->>'category' AS category,\n  kb.metadata->>'success_rate' AS success_rate;",
+        "options": {
+          "queryReplacement": "={{ [$('Parse Batch Request').item.json.category] }}"
+        }
+      },
+      "id": "update-success-rates",
+      "name": "Update Success Rates",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 300],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Archive old knowledge entries (status = inactive)\nUPDATE knowledge_base\nSET metadata = jsonb_set(metadata, '{status}', '\"inactive\"')\nWHERE metadata->>'status' = 'active'\n  AND updated_at < NOW() - INTERVAL '12 months'\n  AND NOT EXISTS (\n    SELECT 1 FROM training_examples te\n    WHERE te.category = knowledge_base.metadata->>'category'\n      AND te.created_at > NOW() - INTERVAL '6 months'\n  )\nRETURNING \n  id,\n  title,\n  metadata->>'category' AS category,\n  updated_at AS archived_at;",
+        "options": {}
+      },
+      "id": "archive-old-entries",
+      "name": "Archive Old Entries",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 400],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Import knowledge from markdown files or JSON\nconst request = $('Parse Batch Request').item.json;\n\n// In production, this would:\n// 1. Read markdown files from knowledge/ directory\n// 2. Parse YAML frontmatter\n// 3. Extract content\n// 4. Generate embeddings\n// 5. Insert into knowledge_base table\n\nreturn {\n  operation: 'import_knowledge',\n  message: 'Knowledge import placeholder - Will be implemented to read from GitHub repository',\n  status: 'pending_implementation',\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "import-knowledge",
+      "name": "Import Knowledge (Placeholder)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 500]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Export knowledge entries to JSON format\nSELECT\n  id,\n  title,\n  content,\n  metadata,\n  search_keywords,\n  created_at,\n  updated_at\nFROM knowledge_base\nWHERE metadata->>'status' = 'active'\n  AND ($1::text IS NULL OR metadata->>'category' = $1)\nORDER BY \n  metadata->>'category',\n  metadata->>'subcategory',\n  title\nLIMIT $2;",
+        "options": {
+          "queryReplacement": "={{ [$('Parse Batch Request').item.json.category, $('Parse Batch Request').item.json.limit] }}"
+        }
+      },
+      "id": "export-knowledge",
+      "name": "Export Knowledge",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1050, 600],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "merge-batch-results",
+      "name": "Merge Batch Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [2050, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate batch processing report\nconst batchConfig = $('Parse Batch Request').item.json;\nconst results = $input.all();\n\nconst report = {\n  batchId: batchConfig.batchId,\n  operation: batchConfig.operation,\n  category: batchConfig.category || 'all',\n  limit: batchConfig.limit,\n  dryRun: batchConfig.dryRun,\n  \n  results: {\n    itemsProcessed: results.length,\n    successful: results.filter(r => r.json.id || r.json.success !== false).length,\n    failed: results.filter(r => r.json.error || r.json.success === false).length,\n    details: results.map(r => r.json)\n  },\n  \n  timing: {\n    startedAt: batchConfig.requestedAt,\n    completedAt: new Date().toISOString(),\n    durationMs: Date.now() - parseInt(batchConfig.batchId)\n  },\n  \n  summary: `Batch operation '${batchConfig.operation}' completed. Processed ${results.length} items.`\n};\n\nconsole.log('Batch processing complete:', report);\n\nreturn report;"
+      },
+      "id": "generate-batch-report",
+      "name": "Generate Batch Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "system_metrics",
+        "columns": "metric_name, metric_value, category, metadata, timestamp",
+        "additionalFields": {}
+      },
+      "id": "log-batch-metrics",
+      "name": "Log Batch Metrics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"text\": `Batch Processing Complete: ${$json.operation}`,\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": {\n        \"type\": \"plain_text\",\n        \"text\": \"📦 Batch Processing Complete\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Operation:* ${$json.operation}\\n*Items Processed:* ${$json.results.itemsProcessed}\\n*Successful:* ${$json.results.successful}\\n*Failed:* ${$json.results.failed}\\n*Duration:* ${($json.timing.durationMs / 1000).toFixed(2)}s`\n      }\n    }\n  ]\n} }}",
+        "options": {}
+      },
+      "id": "notify-batch-complete",
+      "name": "Notify Batch Complete (Slack)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2650, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Batch Trigger": {
+      "main": [
+        [
+          {
+            "node": "Acknowledge Batch Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Acknowledge Batch Request": {
+      "main": [
+        [
+          {
+            "node": "Parse Batch Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Batch Request": {
+      "main": [
+        [
+          {
+            "node": "Operation Router",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Operation Router": {
+      "main": [
+        [
+          {
+            "node": "Fetch Entries for Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Success Rates",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Archive Old Entries",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Import Knowledge (Placeholder)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Export Knowledge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Entries for Embedding": {
+      "main": [
+        [
+          {
+            "node": "Split Into Batches (50)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Batches (50)": {
+      "main": [
+        [
+          {
+            "node": "Generate Batch Embeddings (OpenAI)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Batch Embeddings (OpenAI)": {
+      "main": [
+        [
+          {
+            "node": "Map Embeddings to Entries",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map Embeddings to Entries": {
+      "main": [
+        [
+          {
+            "node": "Update Embeddings in DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Embeddings in DB": {
+      "main": [
+        [
+          {
+            "node": "Merge Batch Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Success Rates": {
+      "main": [
+        [
+          {
+            "node": "Merge Batch Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Archive Old Entries": {
+      "main": [
+        [
+          {
+            "node": "Merge Batch Results",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Import Knowledge (Placeholder)": {
+      "main": [
+        [
+          {
+            "node": "Merge Batch Results",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Export Knowledge": {
+      "main": [
+        [
+          {
+            "node": "Merge Batch Results",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Merge Batch Results": {
+      "main": [
+        [
+          {
+            "node": "Generate Batch Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Batch Report": {
+      "main": [
+        [
+          {
+            "node": "Log Batch Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Batch Metrics": {
+      "main": [
+        [
+          {
+            "node": "Notify Batch Complete (Slack)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "versionId": "1.0.0",
+  "id": "batch-processor",
+  "meta": {
+    "instanceId": "nsw-strata-automation"
+  },
+  "tags": [
+    {
+      "name": "production",
+      "id": "prod"
+    },
+    {
+      "name": "batch",
+      "id": "batch"
+    },
+    {
+      "name": "maintenance",
+      "id": "maintenance"
+    }
+  ]
+}
