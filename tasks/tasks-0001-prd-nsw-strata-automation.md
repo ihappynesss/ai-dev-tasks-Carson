@@ -87,22 +87,22 @@
   - [x] 2.14 Implement GitHub Actions workflow for automated knowledge versioning on commit
   - [x] 2.15 Set up database backup strategy with daily snapshots and 30-day retention
 
-- [ ] 3.0 Implement core webhook and ticket ingestion workflows
+- [x] 3.0 Implement core webhook and ticket ingestion workflows
   - [x] 3.1 Create main-ticket-processor.json workflow for new Freshdesk tickets
   - [x] 3.2 Create reply-handler.json workflow for customer responses and multi-turn conversations
   - [x] 3.3 Create scheduled-maintenance.json workflow for automated operations
   - [x] 3.4 Create manual-trigger.json workflow for on-demand processing with human review
   - [x] 3.5 Create batch-processor.json workflow for bulk knowledge base updates
-  - [ ] 3.6 Configure Freshdesk webhook automation for new ticket creation events
-  - [ ] 3.7 Configure webhook URL paths for each workflow type
-  - [ ] 3.8 Implement webhook node with POST method and Header Auth using shared secret
-  - [ ] 3.9 Set response mode to "Immediately" for fast acknowledgment (within 500ms)
-  - [ ] 3.10 Create ticket enrichment node using Freshdesk "Get Ticket" operation
-  - [ ] 3.11 Implement text normalization: remove HTML, extract entities, concatenate subject+description
-  - [ ] 3.12 Create regex patterns for NSW strata entities (property addresses, lot numbers, keywords)
-  - [ ] 3.13 Implement ticket metadata extraction (priority, custom fields, requester email)
-  - [ ] 3.14 Configure webhook signature verification using HMAC-SHA256
-  - [ ] 3.15 Implement JSON schema validation and rate limiting for security
+  - [x] 3.6 Configure Freshdesk webhook automation for new ticket creation events
+  - [x] 3.7 Configure webhook URL paths for each workflow type
+  - [x] 3.8 Implement webhook node with POST method and Header Auth using shared secret
+  - [x] 3.9 Set response mode to "Immediately" for fast acknowledgment (within 500ms)
+  - [x] 3.10 Create ticket enrichment node using Freshdesk "Get Ticket" operation
+  - [x] 3.11 Implement text normalization: remove HTML, extract entities, concatenate subject+description
+  - [x] 3.12 Create regex patterns for NSW strata entities (property addresses, lot numbers, keywords)
+  - [x] 3.13 Implement ticket metadata extraction (priority, custom fields, requester email)
+  - [x] 3.14 Configure webhook signature verification using HMAC-SHA256
+  - [x] 3.15 Implement JSON schema validation and rate limiting for security
 
 - [ ] 4.0 Build knowledge retrieval and similarity search system
   - [ ] 4.1 Configure OpenAI API integration for text-embedding-3-small model

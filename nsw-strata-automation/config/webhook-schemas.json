@@ -1,0 +1,343 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Freshdesk Webhook Schemas",
+  "description": "JSON schemas for validating Freshdesk webhook payloads",
+
+  "definitions": {
+    "ticket": {
+      "type": "object",
+      "required": ["id", "subject", "status", "priority", "created_at"],
+      "properties": {
+        "id": {
+          "type": ["integer", "string"],
+          "description": "Freshdesk ticket ID"
+        },
+        "subject": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500,
+          "description": "Ticket subject line"
+        },
+        "description": {
+          "type": "string",
+          "description": "Ticket description (HTML)"
+        },
+        "description_text": {
+          "type": "string",
+          "description": "Ticket description (plain text)"
+        },
+        "status": {
+          "type": "integer",
+          "enum": [2, 3, 4, 5, 6, 7],
+          "description": "2=Open, 3=Pending, 4=Resolved, 5=Closed, 6=Waiting on Customer, 7=Waiting on Third Party"
+        },
+        "priority": {
+          "type": "integer",
+          "enum": [1, 2, 3, 4],
+          "description": "1=Low, 2=Medium, 3=High, 4=Urgent"
+        },
+        "source": {
+          "type": "integer",
+          "enum": [1, 2, 3, 7, 8, 9, 10],
+          "description": "1=Email, 2=Portal, 3=Phone, 7=Chat, 8=Feedback Widget, 9=Outbound Email, 10=eCommerce"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "due_by": {
+          "type": ["string", "null"],
+          "format": "date-time"
+        },
+        "fr_due_by": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "First response due by"
+        },
+        "requester_id": {
+          "type": ["integer", "string"]
+        },
+        "responder_id": {
+          "type": ["integer", "string", "null"]
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "custom_fields": {
+          "type": "object",
+          "properties": {
+            "cf_property_id": {
+              "type": "string"
+            },
+            "cf_unit_number": {
+              "type": "string"
+            },
+            "cf_strata_plan": {
+              "type": "string"
+            },
+            "cf_lot_number": {
+              "type": "string"
+            },
+            "cf_complexity": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 5
+            }
+          }
+        }
+      }
+    },
+    "requester": {
+      "type": "object",
+      "required": ["id"],
+      "properties": {
+        "id": {
+          "type": ["integer", "string"]
+        },
+        "name": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string",
+          "format": "email"
+        },
+        "phone": {
+          "type": ["string", "null"],
+          "pattern": "^\\+?[0-9\\s\\-\\(\\)]+$"
+        }
+      }
+    },
+    "reply": {
+      "type": "object",
+      "required": ["body", "created_at"],
+      "properties": {
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Reply body (HTML)"
+        },
+        "body_text": {
+          "type": "string",
+          "description": "Reply body (plain text)"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "user_id": {
+          "type": ["integer", "string"]
+        },
+        "attachments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": {"type": ["integer", "string"]},
+              "name": {"type": "string"},
+              "content_type": {"type": "string"},
+              "size": {"type": "integer"},
+              "attachment_url": {"type": "string", "format": "uri"}
+            }
+          }
+        }
+      }
+    }
+  },
+
+  "newTicketWebhook": {
+    "$id": "#/newTicketWebhook",
+    "type": "object",
+    "required": ["event", "ticket", "timestamp"],
+    "properties": {
+      "event": {
+        "type": "string",
+        "enum": ["ticket_created"],
+        "description": "Event type identifier"
+      },
+      "ticket": {
+        "$ref": "#/definitions/ticket"
+      },
+      "requester": {
+        "$ref": "#/definitions/requester"
+      },
+      "timestamp": {
+        "type": "string",
+        "format": "date-time",
+        "description": "Webhook trigger timestamp"
+      }
+    },
+    "additionalProperties": true
+  },
+
+  "ticketReplyWebhook": {
+    "$id": "#/ticketReplyWebhook",
+    "type": "object",
+    "required": ["event", "is_reply", "performer_type", "ticket", "reply", "timestamp"],
+    "properties": {
+      "event": {
+        "type": "string",
+        "enum": ["ticket_reply", "ticket_update"],
+        "description": "Event type identifier"
+      },
+      "is_reply": {
+        "type": "boolean",
+        "enum": [true],
+        "description": "Must be true for reply webhooks"
+      },
+      "performer_type": {
+        "type": "string",
+        "enum": ["customer", "requester"],
+        "description": "Must be customer/requester (not agent)"
+      },
+      "ticket": {
+        "type": "object",
+        "required": ["id", "status", "requester_id"],
+        "properties": {
+          "id": {"type": ["integer", "string"]},
+          "subject": {"type": "string"},
+          "status": {"type": "integer"},
+          "priority": {"type": "integer"},
+          "requester_id": {"type": ["integer", "string"]},
+          "tags": {
+            "type": "array",
+            "items": {"type": "string"}
+          }
+        }
+      },
+      "reply": {
+        "$ref": "#/definitions/reply"
+      },
+      "timestamp": {
+        "type": "string",
+        "format": "date-time"
+      }
+    },
+    "additionalProperties": true
+  },
+
+  "batchProcessRequest": {
+    "$id": "#/batchProcessRequest",
+    "type": "object",
+    "required": ["operation"],
+    "properties": {
+      "operation": {
+        "type": "string",
+        "enum": [
+          "regenerate_embeddings",
+          "update_success_rates",
+          "archive_old_entries",
+          "import_knowledge",
+          "export_knowledge",
+          "bulk_update_metadata"
+        ],
+        "description": "Batch operation to perform"
+      },
+      "category": {
+        "type": ["string", "null"],
+        "enum": [
+          null,
+          "maintenance-repairs",
+          "by-law-compliance",
+          "financial-matters",
+          "governance-administration",
+          "renovations-alterations",
+          "disputes-complaints",
+          "security-safety",
+          "information-requests"
+        ],
+        "description": "Optional category filter"
+      },
+      "limit": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 100,
+        "default": 50,
+        "description": "Maximum items to process (1-100)"
+      },
+      "dryRun": {
+        "type": "boolean",
+        "default": false,
+        "description": "Preview changes without applying"
+      }
+    },
+    "additionalProperties": false
+  },
+
+  "rateLimitConfig": {
+    "description": "Rate limiting configuration for webhook endpoints",
+    "endpoints": {
+      "/webhook/freshdesk-ticket": {
+        "limits": {
+          "perRequester": {
+            "requests": 10,
+            "window": 60,
+            "unit": "seconds"
+          },
+          "perIP": {
+            "requests": 50,
+            "window": 60,
+            "unit": "seconds"
+          },
+          "global": {
+            "requests": 200,
+            "window": 60,
+            "unit": "seconds"
+          }
+        },
+        "blockDuration": 300,
+        "responses": {
+          "429": {
+            "status": 429,
+            "message": "Rate limit exceeded. Please try again later.",
+            "retryAfter": 60
+          }
+        }
+      },
+      "/webhook/freshdesk-reply": {
+        "limits": {
+          "perRequester": {
+            "requests": 10,
+            "window": 60,
+            "unit": "seconds"
+          },
+          "perIP": {
+            "requests": 50,
+            "window": 60,
+            "unit": "seconds"
+          },
+          "global": {
+            "requests": 200,
+            "window": 60,
+            "unit": "seconds"
+          }
+        }
+      },
+      "/webhook/batch-process": {
+        "limits": {
+          "perIP": {
+            "requests": 5,
+            "window": 300,
+            "unit": "seconds"
+          },
+          "global": {
+            "requests": 10,
+            "window": 300,
+            "unit": "seconds"
+          }
+        }
+      }
+    }
+  }
+}
