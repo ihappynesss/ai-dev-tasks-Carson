@@ -118,8 +118,8 @@
   - [x] 4.11 Implement Redis caching layer with 1-hour TTL for frequent queries
   - [x] 4.12 Create connection pooling configuration with pgBouncer
   - [x] 4.13 Target <200ms query latency optimization
-  - [ ] 4.14 Implement lazy loading for knowledge content (summaries in metadata)
-  - [ ] 4.15 Create fallback to keyword-only search if vector search fails
+  - [x] 4.14 Implement lazy loading for knowledge content (summaries in metadata)
+  - [x] 4.15 Create fallback to keyword-only search if vector search fails
 
 - [ ] 5.0 Implement decision engine with 5 routing paths
   - [ ] 5.1 Create Switch node for decision routing with expression mode

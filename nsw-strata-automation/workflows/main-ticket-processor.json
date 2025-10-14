@@ -148,9 +148,10 @@
     {
       "parameters": {
         "operation": "executeQuery",
-        "query": "-- Vector similarity search using pgvector\\nWITH vector_search AS (\\n  SELECT\\n    id,\\n    title,\\n    content,\\n    metadata,\\n    embedding <-> $1::vector AS distance,\\n    1 - (embedding <-> $1::vector) AS similarity\\n  FROM knowledge_base\\n  WHERE metadata->>'status' = 'active'\\n    -- Optional category filter\\n    -- AND metadata->>'category' = $2\\n  ORDER BY distance\\n  LIMIT 10\\n),\\nkeyword_search AS (\\n  SELECT\\n    id,\\n    title,\\n    content,\\n    metadata,\\n    similarity(content, $2) AS keyword_score\\n  FROM knowledge_base\\n  WHERE metadata->>'status' = 'active'\\n    AND content % $2  -- Trigram similarity\\n  ORDER BY keyword_score DESC\\n  LIMIT 10\\n)\\n-- Reciprocal Rank Fusion\\nSELECT\\n  kb.id,\\n  kb.title,\\n  kb.content,\\n  kb.metadata,\\n  COALESCE(vs.similarity, 0) AS vector_similarity,\\n  COALESCE(ks.keyword_score, 0) AS keyword_score,\\n  (\\n    COALESCE(1.0 / (60 + vs_rank), 0) +\\n    COALESCE(1.0 / (60 + ks_rank), 0)\\n  ) AS combined_score\\nFROM knowledge_base kb\\nLEFT JOIN (\\n  SELECT id, similarity, ROW_NUMBER() OVER (ORDER BY distance) AS vs_rank\\n  FROM vector_search\\n) vs ON kb.id = vs.id\\nLEFT JOIN (\\n  SELECT id, keyword_score, ROW_NUMBER() OVER (ORDER BY keyword_score DESC) AS ks_rank\\n  FROM keyword_search\\n) ks ON kb.id = ks.id\\nWHERE vs.id IS NOT NULL OR ks.id IS NOT NULL\\nORDER BY combined_score DESC\\nLIMIT 5;",
+        "query": "-- Hybrid search with lazy loading (summaries only)\n-- Task 4.14: Only fetch id, title, summary initially for performance\nWITH vector_search AS (\n  SELECT\n    id,\n    title,\n    metadata,\n    embedding <-> $1::vector AS distance,\n    1 - (embedding <-> $1::vector) AS similarity\n  FROM knowledge_base\n  WHERE metadata->>'status' = 'active'\n    -- Optional category filter\n    -- AND metadata->>'category' = $2\n  ORDER BY distance\n  LIMIT 10\n),\nkeyword_search AS (\n  SELECT\n    id,\n    title,\n    metadata,\n    similarity(COALESCE(metadata->>'summary', ''), $2) AS keyword_score\n  FROM knowledge_base\n  WHERE metadata->>'status' = 'active'\n    AND (COALESCE(metadata->>'summary', '') % $2 OR title % $2)\n  ORDER BY keyword_score DESC\n  LIMIT 10\n)\n-- Reciprocal Rank Fusion\nSELECT\n  kb.id,\n  kb.title,\n  kb.metadata->>'summary' AS summary,\n  kb.metadata->>'category' AS category,\n  kb.metadata->>'success_rate' AS success_rate,\n  kb.metadata,\n  COALESCE(vs.similarity, 0) AS vector_similarity,\n  COALESCE(ks.keyword_score, 0) AS keyword_score,\n  (\n    COALESCE(1.0 / (60 + vs_rank), 0) +\n    COALESCE(1.0 / (60 + ks_rank), 0)\n  ) AS combined_score\nFROM knowledge_base kb\nLEFT JOIN (\n  SELECT id, similarity, ROW_NUMBER() OVER (ORDER BY distance) AS vs_rank\n  FROM vector_search\n) vs ON kb.id = vs.id\nLEFT JOIN (\n  SELECT id, keyword_score, ROW_NUMBER() OVER (ORDER BY keyword_score DESC) AS ks_rank\n  FROM keyword_search\n) ks ON kb.id = ks.id\nWHERE vs.id IS NOT NULL OR ks.id IS NOT NULL\nORDER BY combined_score DESC\nLIMIT 5;",
         "options": {
-          "queryReplacement": "={{ [$json.embedding, $json.normalizedText] }}"
+          "queryReplacement": "={{ [$json.embedding, $json.normalizedText] }}",
+          "nodeErrorWorkflow": "fallback-keyword-search"
         }
       },
       "id": "hybrid-search",
@@ -164,6 +165,27 @@
           "name": "Supabase - NSW Strata"
         }
       }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Task 4.15: Fallback keyword-only search when vector search fails\n-- Uses only pg_trgm trigram similarity for keyword matching\nSELECT\n  id,\n  title,\n  metadata->>'summary' AS summary,\n  metadata->>'category' AS category,\n  metadata->>'success_rate' AS success_rate,\n  metadata,\n  0 AS vector_similarity,\n  similarity(COALESCE(metadata->>'summary', title), $1) AS keyword_score,\n  similarity(COALESCE(metadata->>'summary', title), $1) AS combined_score\nFROM knowledge_base\nWHERE metadata->>'status' = 'active'\n  AND (COALESCE(metadata->>'summary', '') % $1 OR title % $1)\nORDER BY keyword_score DESC\nLIMIT 5;",
+        "options": {
+          "queryReplacement": "={{ [$json.normalizedText] }}"
+        }
+      },
+      "id": "fallback-keyword-search",
+      "name": "Fallback: Keyword-Only Search",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1850, 400],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      },
+      "notes": "Fallback search when hybrid search fails - uses trigram similarity only"
     },
     {
       "parameters": {
@@ -203,6 +225,27 @@
       "type": "n8n-nodes-base.switch",
       "typeVersion": 1,
       "position": [2450, 250]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Lazy loading: Fetch full content for selected knowledge entries\n-- Only called when routing path needs full content\nSELECT\n  id,\n  title,\n  content,\n  metadata,\n  search_keywords,\n  created_at,\n  updated_at\nFROM knowledge_base\nWHERE id = ANY($1::uuid[]);",
+        "options": {
+          "queryReplacement": "={{ [Array.from(new Set($json.knowledge.map(k => k.id)))] }}"
+        }
+      },
+      "id": "fetch-full-content",
+      "name": "Fetch Full Knowledge Content",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2450, 100],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      },
+      "notes": "Lazy loading: Fetches full content only when needed by routing paths"
     },
     {
       "parameters": {
@@ -439,6 +482,24 @@
       ]
     },
     "Hybrid Search (Vector + Keyword)": {
+      "main": [
+        [
+          {
+            "node": "Merge Ticket + Knowledge",
+            "type": "main",
+            "index": 1
+          }
+        ],
+        [
+          {
+            "node": "Fallback: Keyword-Only Search",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fallback: Keyword-Only Search": {
       "main": [
         [
           {
