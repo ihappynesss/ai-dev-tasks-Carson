@@ -138,22 +138,22 @@
   - [x] 5.14 Implement dynamic threshold tuning based on success rates
   - [x] 5.15 Create override mechanism for manual routing when needed
 
-- [ ] 6.0 Configure AI integrations and prompt engineering
-  - [ ] 6.1 Set up Claude API integration with claude-sonnet-4.5 model
-  - [ ] 6.2 Configure Claude prompt caching for 50K token system prompts (90% cost reduction)
-  - [ ] 6.3 Implement Claude self-refine methodology: generate → critique → improve (3 iterations)
-  - [ ] 6.4 Set up Perplexity API with sonar-deep-research model (5 RPM limit)
-  - [ ] 6.5 Configure Perplexity sonar-pro model for faster queries (50 RPM)
-  - [ ] 6.6 Implement Redis queue for Perplexity requests at 4.5 RPM maximum
-  - [ ] 6.7 Configure exponential backoff starting at 5 seconds for rate limits
-  - [ ] 6.8 Implement Retry-After header handling for all APIs
-  - [ ] 6.9 Create fallback hierarchy: Claude → GPT-4o → GPT-4o Mini
-  - [ ] 6.10 Configure GPT-4o Mini for classification after 50 samples ($0.15/1M tokens)
-  - [ ] 6.11 Design and test NSW strata-specific prompts with legal context
-  - [ ] 6.12 Create few-shot prompt templates using 5 similar examples
-  - [ ] 6.13 Implement prompt versioning and A/B testing framework
-  - [ ] 6.14 Configure max_tokens=2048 for response generation
-  - [ ] 6.15 Create prompt library for each of the 8 NSW strata categories
+- [x] 6.0 Configure AI integrations and prompt engineering
+  - [x] 6.1 Set up Claude API integration with claude-sonnet-4.5 model
+  - [x] 6.2 Configure Claude prompt caching for 50K token system prompts (90% cost reduction)
+  - [x] 6.3 Implement Claude self-refine methodology: generate → critique → improve (3 iterations)
+  - [x] 6.4 Set up Perplexity API with sonar-deep-research model (5 RPM limit)
+  - [x] 6.5 Configure Perplexity sonar-pro model for faster queries (50 RPM)
+  - [x] 6.6 Implement Redis queue for Perplexity requests at 4.5 RPM maximum
+  - [x] 6.7 Configure exponential backoff starting at 5 seconds for rate limits
+  - [x] 6.8 Implement Retry-After header handling for all APIs
+  - [x] 6.9 Create fallback hierarchy: Claude → GPT-4o → GPT-4o Mini
+  - [x] 6.10 Configure GPT-4o Mini for classification after 50 samples ($0.15/1M tokens)
+  - [x] 6.11 Design and test NSW strata-specific prompts with legal context
+  - [x] 6.12 Create few-shot prompt templates using 5 similar examples
+  - [x] 6.13 Implement prompt versioning and A/B testing framework
+  - [x] 6.14 Configure max_tokens=2048 for response generation
+  - [x] 6.15 Create prompt library for each of the 8 NSW strata categories
 
 - [ ] 7.0 Develop progressive learning system
   - [ ] 7.1 Implement phase tracking: Manual (0-30), Assisted (30-100), Autonomous (100+)

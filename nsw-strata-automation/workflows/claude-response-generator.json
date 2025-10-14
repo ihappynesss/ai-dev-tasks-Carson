@@ -1,0 +1,376 @@
+{
+  "name": "Claude Response Generator",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "input-validation",
+              "name": "ticket",
+              "value": "={{ $json.ticket }}",
+              "type": "object"
+            },
+            {
+              "id": "knowledge-input",
+              "name": "knowledge",
+              "value": "={{ $json.knowledge }}",
+              "type": "array"
+            },
+            {
+              "id": "routing-input",
+              "name": "routingPath",
+              "value": "={{ $json.routingPath }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "start-node",
+      "name": "Start",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Task 6.11 & 6.12: Load NSW strata prompt template with few-shot examples\n// Task 6.2: Prepare prompt with caching for 50K token system prompt\n\nconst ticket = $json.ticket;\nconst knowledge = $json.knowledge;\nconst routingPath = $json.routingPath;\n\n// Load prompt templates (would be from file in production)\nconst promptTemplates = $node[\"prompt-templates\"].json || {};\n\n// Determine category\nconst category = ticket.categoryHints?.[0] || 'information_requests';\nconst categoryConfig = promptTemplates.categories?.[category] || {};\n\n// Build system prompt with caching\nconst systemPromptBase = promptTemplates.system_prompt?.base || 'You are a NSW strata management assistant.';\n\n// Task 6.12: Add few-shot examples\nconst fewShotExamples = categoryConfig.few_shot_examples || [];\nconst fewShotText = fewShotExamples.slice(0, 5).map((ex, i) => \n  `Example ${i+1}:\\nTicket: \"${ex.ticket}\"\\nResponse: \"${ex.response}\"`\n).join('\\n\\n---\\n\\n');\n\n// Build full system prompt\nconst systemPrompt = [\n  {\n    \"type\": \"text\",\n    \"text\": systemPromptBase,\n    \"cache_control\": { \"type\": \"ephemeral\" }  // Task 6.2: Enable caching\n  }\n];\n\nif (fewShotText) {\n  systemPrompt.push({\n    \"type\": \"text\",\n    \"text\": \"\\n\\n## Few-Shot Examples\\n\\n\" + fewShotText,\n    \"cache_control\": { \"type\": \"ephemeral\" }\n  });\n}\n\n// Build user prompt\nconst knowledgeContext = knowledge.map((k, i) => \n  `Knowledge Entry ${i+1}:\\nTitle: ${k.title}\\nCategory: ${k.category}\\nContent: ${k.summary || k.content || 'N/A'}\\nSuccess Rate: ${k.success_rate || 'N/A'}`\n).join('\\n\\n---\\n\\n');\n\nconst userPrompt = `You are responding to a strata management ticket.\n\nTicket Information:\nSubject: ${ticket.subject}\nDescription: ${ticket.description}\nPriority: ${ticket.priority}\nRequester: ${ticket.requester?.name || 'Unknown'}\n\nRelevant Knowledge Base Entries:\n${knowledgeContext}\n\nRouting Path: ${routingPath}\nCategory: ${category}\n\nTask: Generate a professional, accurate, and helpful response to this ticket. Follow the response structure guidelines in the system prompt.`;\n\nreturn {\n  systemPrompt: systemPrompt,\n  userPrompt: userPrompt,\n  category: category,\n  routingPath: routingPath,\n  ticket: ticket,\n  knowledge: knowledge\n};"
+      },
+      "id": "prepare-prompt",
+      "name": "Prepare Prompt Template",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "notes": "Tasks 6.2, 6.11, 6.12: Load prompt with caching and few-shot examples"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CLAUDE_API_URL || 'https://api.anthropic.com' }}/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.CLAUDE_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": \"claude-sonnet-4.5\",\n  \"max_tokens\": 2048,\n  \"temperature\": 0.7,\n  \"system\": $json.systemPrompt,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": $json.userPrompt\n    }\n  ]\n} }}",
+        "options": {
+          "timeout\": 30000,
+          "retry": {
+            "enabled": true,
+            "maxRetries": 3,
+            "waitBetween": 5000
+          }
+        }
+      },
+      "id": "claude-generate",
+      "name": "Claude Generate (Iteration 1)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [650, 300],
+      "notes": "Task 6.1 & 6.14: Claude API call with 2048 max tokens"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Task 6.3: Self-refine iteration 2 - Critique\n// Extract generated response and prepare critique prompt\n\nconst claudeResponse = $json.content?.[0]?.text || '';\nconst previousData = $node[\"Prepare Prompt Template\"].json;\n\nconst critiquePrompt = `Review this generated response and provide constructive critique:\n\nOriginal Ticket:\nSubject: ${previousData.ticket.subject}\nDescription: ${previousData.ticket.description}\n\nGenerated Response:\n${claudeResponse}\n\nCritique Instructions:\n1. Check factual accuracy regarding NSW strata law\n2. Verify legislation references are correct and relevant\n3. Assess clarity and understandability\n4. Evaluate professionalism and empathy\n5. Identify missing information or steps\n6. Check for any hallucinated information\n\nProvide specific, actionable improvements.`;\n\nreturn {\n  systemPrompt: previousData.systemPrompt,\n  originalResponse: claudeResponse,\n  critiquePrompt: critiquePrompt,\n  ticket: previousData.ticket,\n  knowledge: previousData.knowledge,\n  category: previousData.category\n};"
+      },
+      "id": "prepare-critique",
+      "name": "Prepare Critique (Iteration 2)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300],
+      "notes": "Task 6.3: Self-refine - critique step"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CLAUDE_API_URL || 'https://api.anthropic.com' }}/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.CLAUDE_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": \"claude-sonnet-4.5\",\n  \"max_tokens\": 1024,\n  \"temperature\": 0.3,\n  \"system\": $json.systemPrompt,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": $json.critiquePrompt\n    }\n  ]\n} }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "claude-critique",
+      "name": "Claude Critique (Iteration 2)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 300],
+      "notes": "Task 6.3: Self-refine - get critique"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Task 6.3: Self-refine iteration 3 - Improve\n// Combine original response with critique to generate improved version\n\nconst critique = $json.content?.[0]?.text || '';\nconst previousData = $node[\"Prepare Critique (Iteration 2)\"].json;\n\nconst improvePrompt = `Rewrite and improve this response based on the critique provided:\n\nOriginal Response:\n${previousData.originalResponse}\n\nCritique:\n${critique}\n\nTask: Generate an improved response that addresses all critique points while maintaining the response structure and professional tone. Ensure accuracy and clarity.`;\n\nreturn {\n  systemPrompt: previousData.systemPrompt,\n  improvePrompt: improvePrompt,\n  originalResponse: previousData.originalResponse,\n  critique: critique,\n  ticket: previousData.ticket,\n  knowledge: previousData.knowledge\n};"
+      },
+      "id": "prepare-improve",
+      "name": "Prepare Improve (Iteration 3)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300],
+      "notes": "Task 6.3: Self-refine - prepare improvement"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CLAUDE_API_URL || 'https://api.anthropic.com' }}/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.CLAUDE_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": \"claude-sonnet-4.5\",\n  \"max_tokens\": 2048,\n  \"temperature\": 0.7,\n  \"system\": $json.systemPrompt,\n  \"messages\": [\n    {\n      \"role\": \"user\",\n      \"content\": $json.improvePrompt\n    }\n  ]\n} }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "claude-improve",
+      "name": "Claude Improve (Iteration 3)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 300],
+      "notes": "Task 6.3: Self-refine - final improved response"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract final response and prepare output\nconst finalResponse = $json.content?.[0]?.text || '';\nconst previousData = $node[\"Prepare Improve (Iteration 3)\"].json;\n\nreturn {\n  ticketId: previousData.ticket.ticketId,\n  responseBody: finalResponse,\n  originalResponse: previousData.originalResponse,\n  critique: previousData.critique,\n  finalResponse: finalResponse,\n  knowledgeIds: previousData.knowledge.map(k => k.id),\n  category: previousData.category,\n  model: 'claude-sonnet-4.5',\n  iterations: 3,\n  processingTimestamp: new Date().toISOString()\n};"
+      },
+      "id": "extract-final-response",
+      "name": "Extract Final Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 300],
+      "notes": "Extract and format final response"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Task 6.9: Fallback to GPT-4o if Claude fails\nconst error = $json.error || {};\nconst previousData = $node[\"Prepare Prompt Template\"].json;\n\nconsole.error('Claude API failed, falling back to GPT-4o:', error);\n\n// Prepare GPT-4o request\nconst systemPrompt = previousData.systemPrompt.map(p => p.text).join('\\n');\nconst userPrompt = previousData.userPrompt;\n\nreturn {\n  systemPrompt: systemPrompt,\n  userPrompt: userPrompt,\n  ticket: previousData.ticket,\n  knowledge: previousData.knowledge,\n  fallbackReason: 'Claude API failure',\n  fallbackModel: 'gpt-4o'\n};"
+      },
+      "id": "fallback-handler",
+      "name": "Fallback to GPT-4o",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 500],
+      "notes": "Task 6.9: Fallback hierarchy - GPT-4o"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.openai.com/v1/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENAI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": \"gpt-4o\",\n  \"max_tokens\": 2048,\n  \"temperature\": 0.7,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": $json.systemPrompt\n    },\n    {\n      \"role\": \"user\",\n      \"content\": $json.userPrompt\n    }\n  ]\n} }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "gpt4o-fallback",
+      "name": "GPT-4o Fallback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 500],
+      "notes": "Task 6.9: GPT-4o fallback"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract GPT-4o response\nconst response = $json.choices?.[0]?.message?.content || '';\nconst previousData = $node[\"Fallback to GPT-4o\"].json;\n\nreturn {\n  ticketId: previousData.ticket.ticketId,\n  responseBody: response,\n  knowledgeIds: previousData.knowledge.map(k => k.id),\n  model: 'gpt-4o',\n  fallback: true,\n  processingTimestamp: new Date().toISOString()\n};"
+      },
+      "id": "extract-fallback-response",
+      "name": "Extract Fallback Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 500],
+      "notes": "Extract GPT-4o response"
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Prepare Prompt Template",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Prompt Template": {
+      "main": [
+        [
+          {
+            "node": "Claude Generate (Iteration 1)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Generate (Iteration 1)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Critique (Iteration 2)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fallback to GPT-4o",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Critique (Iteration 2)": {
+      "main": [
+        [
+          {
+            "node": "Claude Critique (Iteration 2)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Critique (Iteration 2)": {
+      "main": [
+        [
+          {
+            "node": "Prepare Improve (Iteration 3)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Improve (Iteration 3)": {
+      "main": [
+        [
+          {
+            "node": "Claude Improve (Iteration 3)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Improve (Iteration 3)": {
+      "main": [
+        [
+          {
+            "node": "Extract Final Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fallback to GPT-4o": {
+      "main": [
+        [
+          {
+            "node": "GPT-4o Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "GPT-4o Fallback": {
+      "main": [
+        [
+          {
+            "node": "Extract Fallback Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "versionId": "1.0.0",
+  "id": "claude-response-generator",
+  "tags": [
+    {
+      "name": "ai-generation",
+      "id": "ai-gen"
+    },
+    {
+      "name": "claude",
+      "id": "claude"
+    }
+  ]
+}

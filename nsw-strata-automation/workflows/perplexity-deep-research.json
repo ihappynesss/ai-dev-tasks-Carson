@@ -1,0 +1,277 @@
+{
+  "name": "Perplexity Deep Research",
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "ticket-input",
+              "name": "ticket",
+              "value": "={{ $json.ticket }}",
+              "type": "object"
+            },
+            {
+              "id": "research-query",
+              "name": "researchQuery",
+              "value": "={{ $json.researchQuery }}",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "id": "start-research",
+      "name": "Start",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Task 6.6: Check Redis rate limit for Perplexity (4.5 RPM)\n// Task 6.7: Implement exponential backoff\n\nconst Redis = require('ioredis');\n\nconst redis = new Redis({\n  host: process.env.REDIS_HOST || 'redis',\n  port: 6379,\n  db: 2  // Rate limiting database\n});\n\nconst rateLimitKey = 'ratelimit:perplexity:rpm';\nconst maxRequests = 4;  // 4.5 RPM, use 4 for safety margin\nconst windowSeconds = 60;\n\n// Check current count\nconst current = await redis.incr(rateLimitKey);\n\nif (current === 1) {\n  // First request in window, set expiry\n  await redis.expire(rateLimitKey, windowSeconds);\n}\n\nif (current > maxRequests) {\n  // Rate limit exceeded\n  const ttl = await redis.ttl(rateLimitKey);\n  \n  throw new Error(\n    `Perplexity rate limit exceeded (${current}/${maxRequests} requests). ` +\n    `Retry after ${ttl} seconds.`\n  );\n}\n\n// Rate limit OK, proceed\nreturn {\n  ticket: $json.ticket,\n  researchQuery: $json.researchQuery,\n  rateLimitStatus: {\n    current: current,\n    max: maxRequests,\n    remaining: maxRequests - current\n  }\n};"
+      },
+      "id": "check-rate-limit",
+      "name": "Check Perplexity Rate Limit",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "notes": "Task 6.6: Redis-based rate limiting at 4.5 RPM"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Prepare research query for Perplexity\n// Task 6.4: Use sonar-deep-research model\n\nconst ticket = $json.ticket;\nconst researchQuery = $json.researchQuery;\n\n// Build research prompt specific to NSW strata\nconst researchPrompt = `Research the following NSW strata management question and provide a comprehensive answer with citations:\n\nQuestion: ${researchQuery}\n\nContext:\n- Subject: ${ticket.subject}\n- Description: ${ticket.description}\n- Priority: ${ticket.priority}\n\nPlease focus on:\n1. Relevant NSW legislation (SSMA 2015, SSDA 2015, Model By-laws)\n2. Recent case law or tribunal decisions\n3. Industry best practices\n4. Practical resolution steps\n\nProvide accurate information with citations to authoritative sources.`;\n\nreturn {\n  researchPrompt: researchPrompt,\n  ticket: ticket,\n  rateLimitStatus: $json.rateLimitStatus\n};"
+      },
+      "id": "prepare-research-prompt",
+      "name": "Prepare Research Prompt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 300],
+      "notes": "Build research prompt for NSW strata context"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PERPLEXITY_API_URL || 'https://api.perplexity.ai' }}/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.PERPLEXITY_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": \"sonar-deep-research\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a research assistant specializing in NSW strata management law and regulations. Provide accurate, well-cited information.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": $json.researchPrompt\n    }\n  ],\n  \"max_tokens\": 4096,\n  \"temperature\": 0.2,\n  \"return_citations\": true,\n  \"return_images\": false\n} }}",
+        "options": {
+          "timeout": 60000,
+          "retry": {
+            "enabled": true,
+            "maxRetries": 3,
+            "waitBetween": 5000
+          }
+        }
+      },
+      "id": "perplexity-research",
+      "name": "Perplexity Deep Research",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 300],
+      "notes": "Task 6.4: Perplexity sonar-deep-research API call"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Task 6.8: Handle rate limit with Retry-After header\n// Task 6.7: Exponential backoff\n\nconst error = $json.error || {};\nconst response = $json.response || {};\nconst statusCode = response.status || error.status || 0;\n\nif (statusCode === 429) {\n  // Rate limit exceeded\n  const retryAfter = response.headers?.['retry-after'] || 60;\n  const backoffSeconds = Math.min(parseInt(retryAfter) || 60, 300);  // Max 5 min\n  \n  console.log(`Perplexity rate limited. Retry after ${backoffSeconds}s`);\n  \n  return {\n    error: true,\n    errorType: 'rate_limit',\n    retryAfter: backoffSeconds,\n    message: `Rate limit exceeded. Retry in ${backoffSeconds} seconds.`,\n    originalRequest: $json\n  };\n} else if (statusCode >= 500) {\n  // Server error - exponential backoff\n  const attempt = $json.attempt || 1;\n  const backoffSeconds = Math.min(5 * Math.pow(2, attempt - 1), 60);  // 5s, 10s, 20s, max 60s\n  \n  console.log(`Perplexity server error (${statusCode}). Backoff ${backoffSeconds}s`);\n  \n  return {\n    error: true,\n    errorType: 'server_error',\n    retryAfter: backoffSeconds,\n    attempt: attempt + 1,\n    message: `Server error ${statusCode}. Retry in ${backoffSeconds} seconds.`,\n    originalRequest: $json\n  };\n} else {\n  // Other error - don't retry\n  return {\n    error: true,\n    errorType: 'api_error',\n    message: error.message || 'Perplexity API error',\n    originalRequest: $json\n  };\n}"
+      },
+      "id": "handle-rate-limit",
+      "name": "Handle Rate Limit & Errors",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 500],
+      "notes": "Tasks 6.7 & 6.8: Exponential backoff and Retry-After handling"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract research findings with citations\nconst response = $json.choices?.[0]?.message?.content || '';\nconst citations = $json.citations || [];\nconst previousData = $node[\"Prepare Research Prompt\"].json;\n\n// Format citations\nconst citationText = citations.length > 0\n  ? '\\n\\nSources:\\n' + citations.map((c, i) => `[${i+1}] ${c}`).join('\\n')\n  : '';\n\nconst formattedResponse = response + citationText;\n\nreturn {\n  ticketId: previousData.ticket.ticketId,\n  researchFindings: formattedResponse,\n  citations: citations,\n  citationCount: citations.length,\n  ticket: previousData.ticket,\n  model: 'sonar-deep-research',\n  processingTimestamp: new Date().toISOString(),\n  rateLimitStatus: previousData.rateLimitStatus\n};"
+      },
+      "id": "extract-research",
+      "name": "Extract Research Findings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "notes": "Extract and format research with citations"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Task 6.5: Fallback to sonar-pro for faster queries if deep research fails\nconst previousData = $node[\"Prepare Research Prompt\"].json;\n\nconsole.log('Deep research failed, falling back to sonar-pro');\n\nreturn {\n  researchPrompt: previousData.researchPrompt,\n  ticket: previousData.ticket,\n  fallbackModel: 'sonar-pro',\n  fallbackReason: 'deep-research-failed'\n};"
+      },
+      "id": "fallback-sonar-pro",
+      "name": "Fallback to Sonar-Pro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 500],
+      "notes": "Task 6.5: Fallback to sonar-pro (50 RPM)"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PERPLEXITY_API_URL || 'https://api.perplexity.ai' }}/chat/completions",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.PERPLEXITY_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"model\": \"sonar-pro\",\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are a research assistant specializing in NSW strata management law and regulations.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": $json.researchPrompt\n    }\n  ],\n  \"max_tokens\": 2048,\n  \"temperature\": 0.2,\n  \"return_citations\": true\n} }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "sonar-pro-fallback",
+      "name": "Sonar-Pro Fallback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1250, 500],
+      "notes": "Task 6.5: Sonar-pro fallback (faster, 50 RPM)"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract sonar-pro fallback response\nconst response = $json.choices?.[0]?.message?.content || '';\nconst citations = $json.citations || [];\nconst previousData = $node[\"Fallback to Sonar-Pro\"].json;\n\nconst citationText = citations.length > 0\n  ? '\\n\\nSources:\\n' + citations.map((c, i) => `[${i+1}] ${c}`).join('\\n')\n  : '';\n\nconst formattedResponse = response + citationText;\n\nreturn {\n  ticketId: previousData.ticket.ticketId,\n  researchFindings: formattedResponse,\n  citations: citations,\n  citationCount: citations.length,\n  ticket: previousData.ticket,\n  model: 'sonar-pro',\n  fallback: true,\n  processingTimestamp: new Date().toISOString()\n};"
+      },
+      "id": "extract-fallback-research",
+      "name": "Extract Fallback Research",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 500],
+      "notes": "Extract sonar-pro response"
+    }
+  ],
+  "connections": {
+    "Start": {
+      "main": [
+        [
+          {
+            "node": "Check Perplexity Rate Limit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Perplexity Rate Limit": {
+      "main": [
+        [
+          {
+            "node": "Prepare Research Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Rate Limit & Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Research Prompt": {
+      "main": [
+        [
+          {
+            "node": "Perplexity Deep Research",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Perplexity Deep Research": {
+      "main": [
+        [
+          {
+            "node": "Extract Research Findings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Handle Rate Limit & Errors",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Handle Rate Limit & Errors": {
+      "main": [
+        [
+          {
+            "node": "Fallback to Sonar-Pro",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fallback to Sonar-Pro": {
+      "main": [
+        [
+          {
+            "node": "Sonar-Pro Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sonar-Pro Fallback": {
+      "main": [
+        [
+          {
+            "node": "Extract Fallback Research",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "versionId": "1.0.0",
+  "id": "perplexity-deep-research",
+  "tags": [
+    {
+      "name": "research",
+      "id": "research"
+    },
+    {
+      "name": "perplexity",
+      "id": "perplexity"
+    }
+  ]
+}
