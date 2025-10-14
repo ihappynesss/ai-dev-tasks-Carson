@@ -1,0 +1,345 @@
+name: Knowledge Base Versioning
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'knowledge/**/*.md'
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'knowledge/**/*.md'
+
+jobs:
+  validate-knowledge:
+    name: Validate Knowledge Entries
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for version tracking
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install pyyaml markdown jsonschema
+
+      - name: Validate YAML frontmatter
+        run: |
+          python3 << 'EOF'
+          import os
+          import yaml
+          import sys
+          from pathlib import Path
+
+          required_fields = ['id', 'title', 'category', 'subcategory', 'created', 'updated', 'author', 'status', 'success_rate', 'version']
+          errors = []
+
+          for md_file in Path('knowledge').rglob('*.md'):
+              if md_file.name == 'README.md':
+                  continue
+
+              with open(md_file, 'r') as f:
+                  content = f.read()
+
+              # Extract YAML frontmatter
+              if content.startswith('---'):
+                  try:
+                      yaml_end = content.find('---', 3)
+                      if yaml_end == -1:
+                          errors.append(f"{md_file}: Invalid YAML frontmatter (no closing ---)")
+                          continue
+
+                      frontmatter = yaml.safe_load(content[3:yaml_end])
+
+                      # Check required fields
+                      for field in required_fields:
+                          if field not in frontmatter:
+                              errors.append(f"{md_file}: Missing required field '{field}'")
+
+                      # Validate category matches directory
+                      parts = md_file.parts
+                      if len(parts) >= 3:
+                          expected_category = parts[1]
+                          if frontmatter.get('category') != expected_category:
+                              errors.append(f"{md_file}: Category '{frontmatter.get('category')}' doesn't match directory '{expected_category}'")
+
+                      # Validate success_rate is between 0 and 1
+                      success_rate = frontmatter.get('success_rate')
+                      if success_rate is not None and not (0 <= float(success_rate) <= 1):
+                          errors.append(f"{md_file}: success_rate must be between 0 and 1")
+
+                      # Validate status
+                      valid_statuses = ['active', 'inactive', 'draft', 'review']
+                      if frontmatter.get('status') not in valid_statuses:
+                          errors.append(f"{md_file}: Invalid status (must be one of {valid_statuses})")
+
+                  except yaml.YAMLError as e:
+                      errors.append(f"{md_file}: YAML parsing error - {e}")
+              else:
+                  errors.append(f"{md_file}: Missing YAML frontmatter")
+
+          if errors:
+              print("❌ Knowledge validation failed:")
+              for error in errors:
+                  print(f"  - {error}")
+              sys.exit(1)
+          else:
+              print("✅ All knowledge entries validated successfully")
+          EOF
+
+      - name: Check for version increments
+        if: github.event_name == 'push'
+        run: |
+          python3 << 'EOF'
+          import os
+          import yaml
+          import subprocess
+          from pathlib import Path
+
+          # Get list of modified markdown files
+          result = subprocess.run(
+              ['git', 'diff', '--name-only', 'HEAD^', 'HEAD', '--', 'knowledge/**/*.md'],
+              capture_output=True,
+              text=True
+          )
+
+          modified_files = [f for f in result.stdout.strip().split('\n') if f and f.endswith('.md') and 'README.md' not in f]
+
+          if not modified_files:
+              print("ℹ️ No knowledge entries modified")
+              exit(0)
+
+          warnings = []
+
+          for file_path in modified_files:
+              if not os.path.exists(file_path):
+                  continue  # File was deleted
+
+              with open(file_path, 'r') as f:
+                  content = f.read()
+
+              if not content.startswith('---'):
+                  continue
+
+              yaml_end = content.find('---', 3)
+              if yaml_end == -1:
+                  continue
+
+              frontmatter = yaml.safe_load(content[3:yaml_end])
+              updated_date = frontmatter.get('updated')
+
+              # Check if updated date was changed
+              result = subprocess.run(
+                  ['git', 'diff', 'HEAD^', 'HEAD', '--', file_path],
+                  capture_output=True,
+                  text=True
+              )
+
+              diff = result.stdout
+              if 'updated:' in diff:
+                  print(f"✅ {file_path}: Updated date modified")
+              else:
+                  warnings.append(f"⚠️  {file_path}: Modified but 'updated' field not changed")
+
+          if warnings:
+              print("\nWarnings (non-blocking):")
+              for warning in warnings:
+                  print(f"  {warning}")
+
+          print(f"\n✅ Version check complete - {len(modified_files)} files checked")
+          EOF
+
+  update-database-metadata:
+    name: Update Database with Knowledge Changes
+    runs-on: ubuntu-latest
+    needs: validate-knowledge
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Generate change summary
+        run: |
+          python3 << 'EOF'
+          import os
+          import yaml
+          import subprocess
+          import json
+          from pathlib import Path
+          from datetime import datetime
+
+          # Get list of modified, added, and deleted files
+          result = subprocess.run(
+              ['git', 'diff', '--name-status', 'HEAD^', 'HEAD', '--', 'knowledge/**/*.md'],
+              capture_output=True,
+              text=True
+          )
+
+          changes = []
+          for line in result.stdout.strip().split('\n'):
+              if not line:
+                  continue
+
+              parts = line.split('\t')
+              if len(parts) != 2:
+                  continue
+
+              status, file_path = parts
+              if 'README.md' in file_path:
+                  continue
+
+              change = {
+                  'file': file_path,
+                  'status': status,  # A (added), M (modified), D (deleted)
+                  'timestamp': datetime.utcnow().isoformat()
+              }
+
+              # If file exists, extract metadata
+              if status != 'D' and os.path.exists(file_path):
+                  with open(file_path, 'r') as f:
+                      content = f.read()
+
+                  if content.startswith('---'):
+                      yaml_end = content.find('---', 3)
+                      if yaml_end != -1:
+                          frontmatter = yaml.safe_load(content[3:yaml_end])
+                          change['metadata'] = {
+                              'id': frontmatter.get('id'),
+                              'title': frontmatter.get('title'),
+                              'category': frontmatter.get('category'),
+                              'subcategory': frontmatter.get('subcategory'),
+                              'version': frontmatter.get('version'),
+                              'updated': frontmatter.get('updated')
+                          }
+
+              changes.append(change)
+
+          # Save changes summary
+          with open('knowledge-changes.json', 'w') as f:
+              json.dump(changes, f, indent=2)
+
+          print(f"📝 Generated change summary for {len(changes)} knowledge entries")
+          print(json.dumps(changes, indent=2))
+          EOF
+
+      - name: Upload change summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: knowledge-changes
+          path: knowledge-changes.json
+          retention-days: 90
+
+      - name: Comment on commit
+        if: github.event_name == 'push'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const changes = JSON.parse(fs.readFileSync('knowledge-changes.json', 'utf8'));
+
+            if (changes.length === 0) {
+              console.log('No knowledge base changes to report');
+              return;
+            }
+
+            let comment = '## 📚 Knowledge Base Changes\n\n';
+            comment += `Updated ${changes.length} knowledge ${changes.length === 1 ? 'entry' : 'entries'}:\n\n`;
+
+            for (const change of changes) {
+              const status = change.status === 'A' ? '✨ Added' : change.status === 'M' ? '📝 Modified' : '🗑️ Deleted';
+              comment += `- ${status}: **${change.metadata?.title || change.file}**\n`;
+              if (change.metadata) {
+                comment += `  - Category: ${change.metadata.category} / ${change.metadata.subcategory}\n`;
+                comment += `  - Version: ${change.metadata.version}\n`;
+              }
+            }
+
+            comment += '\n---\n';
+            comment += '*These changes should be synced to the Supabase knowledge_base table for RAG retrieval.*';
+
+            await github.rest.repos.createCommitComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              commit_sha: context.sha,
+              body: comment
+            });
+
+  backup-to-release:
+    name: Create Tagged Backup
+    runs-on: ubuntu-latest
+    needs: validate-knowledge
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get current date
+        id: date
+        run: echo "date=$(date +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+      - name: Create knowledge backup
+        run: |
+          mkdir -p backups
+          tar -czf backups/knowledge-${{ steps.date.outputs.date }}.tar.gz knowledge/
+
+      - name: Upload backup artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: knowledge-backup-${{ steps.date.outputs.date }}
+          path: backups/knowledge-${{ steps.date.outputs.date }}.tar.gz
+          retention-days: 365
+
+  notify-team:
+    name: Notify Team of Changes
+    runs-on: ubuntu-latest
+    needs: validate-knowledge
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Generate notification
+        run: |
+          echo "Knowledge base updated on $(date)"
+          echo "Commit: ${{ github.sha }}"
+          echo "Author: ${{ github.actor }}"
+          echo ""
+          echo "Modified files:"
+          git diff --name-only HEAD^ HEAD -- knowledge/
+
+      # Optional: Send Slack notification
+      # - name: Send Slack notification
+      #   if: always()
+      #   uses: slackapi/slack-github-action@v1
+      #   with:
+      #     webhook-url: ${{ secrets.SLACK_WEBHOOK_URL }}
+      #     payload: |
+      #       {
+      #         "text": "Knowledge base updated",
+      #         "blocks": [
+      #           {
+      #             "type": "section",
+      #             "text": {
+      #               "type": "mrkdwn",
+      #               "text": "*Knowledge Base Updated*\nCommit: ${{ github.sha }}\nAuthor: ${{ github.actor }}"
+      #             }
+      #           }
+      #         ]
+      #       }
