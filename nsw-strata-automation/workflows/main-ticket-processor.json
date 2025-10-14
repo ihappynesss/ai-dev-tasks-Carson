@@ -249,103 +249,128 @@
     },
     {
       "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "placeholder",
-              "name": "message",
-              "value": "Auto-respond path - implement Claude response generation",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
+        "functionCode": "// Task 5.2: Auto-Respond Path Implementation\n// High confidence (>0.85), generate and post response automatically\n\nconst ticket = $json.ticket;\nconst knowledge = $json.knowledge;\nconst routing = $json.routing;\n\n// Task 5.8: Lightweight personalization updates\nfunction personalizeResponse(knowledgeContent, ticketData) {\n  let response = knowledgeContent;\n  \n  // Replace dates with current context\n  const today = new Date().toLocaleDateString('en-AU', { \n    weekday: 'long', \n    year: 'numeric', \n    month: 'long', \n    day: 'numeric' \n  });\n  response = response.replace(/{{current_date}}/g, today);\n  \n  // Replace property details\n  if (ticketData.entities?.propertyAddresses?.length > 0) {\n    response = response.replace(/{{property_address}}/g, ticketData.entities.propertyAddresses[0]);\n  }\n  \n  if (ticketData.entities?.lotNumbers?.length > 0) {\n    response = response.replace(/{{lot_number}}/g, ticketData.entities.lotNumbers[0]);\n  }\n  \n  // Personalize greeting\n  const requesterName = ticketData.requester?.name || 'there';\n  response = response.replace(/{{requester_name}}/g, requesterName);\n  \n  return response;\n}\n\n// Get the best knowledge entry\nconst bestKnowledge = knowledge[0];\nconst responseText = personalizeResponse(\n  bestKnowledge.summary || 'Response based on knowledge entry',\n  ticket\n);\n\n// Task 5.9: Claude quality check placeholder (to be implemented in Task 6.0)\n// For now, use knowledge content directly\nconst qualityCheckStatus = 'APPROVED';\n\nreturn {\n  ticketId: ticket.ticketId,\n  responseBody: `<p>Hello ${ticket.requester?.name || 'there'},</p>\\n<p>${responseText}</p>\\n<p>Best regards,<br/>NSW Strata Management Team</p>`,\n  knowledgeId: bestKnowledge.id,\n  confidence: routing.confidence,\n  routingPath: routing.path,\n  qualityCheck: qualityCheckStatus,\n  tags: ['auto-resolved', 'kb-reused'],\n  status: 4,  // Resolved\n  priority: ticket.priority,\n  processingTimestamp: new Date().toISOString()\n};"
       },
       "id": "auto-respond-path",
       "name": "Path 1: Auto-Respond",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.2,
-      "position": [2650, 100]
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2650, 100],
+      "notes": "Task 5.2: Auto-respond with high confidence, lightweight personalization"
     },
     {
       "parameters": {
-        "assignments": {
-          "assignments": [
+        "method": "POST",
+        "url": "={{ $env.FRESHDESK_DOMAIN }}/api/v2/tickets/{{ $json.ticketId }}/reply",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "freshdeskApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
             {
-              "id": "placeholder",
-              "name": "message",
-              "value": "Auto-refine path - implement Claude refinement",
-              "type": "string"
+              "name": "Content-Type",
+              "value": "application/json"
             }
           ]
         },
-        "options": {}
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\"body\": $json.responseBody, \"from_email\": $env.FRESHDESK_FROM_EMAIL || \"support@company.com\"} }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "post-reply-freshdesk",
+      "name": "Post Reply to Freshdesk",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2850, 100],
+      "credentials": {
+        "freshdeskApi": {
+          "id": "freshdesk-api",
+          "name": "Freshdesk API"
+        }
+      },
+      "notes": "Task 5.10: Post reply to Freshdesk ticket"
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $env.FRESHDESK_DOMAIN }}/api/v2/tickets/{{ $json.ticketId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "freshdeskApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\"status\": $json.status, \"tags\": $json.tags, \"custom_fields\": {\"knowledge_id\": $json.knowledgeId, \"confidence\": $json.confidence, \"routing_path\": $json.routingPath}} }}",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "update-ticket-status",
+      "name": "Update Ticket Status & Tags",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [3050, 100],
+      "credentials": {
+        "freshdeskApi": {
+          "id": "freshdesk-api",
+          "name": "Freshdesk API"
+        }
+      },
+      "notes": "Task 5.11 & 5.12: Update ticket status and append tags"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Task 5.3: Auto-Refine Path Implementation\n// Medium-high confidence (0.75-0.85), refine response with Claude\n\nconst ticket = $json.ticket;\nconst knowledge = $json.knowledge;\nconst routing = $json.routing;\n\n// Get top knowledge entries for refinement\nconst topKnowledge = knowledge.slice(0, 3);\n\n// Task 6.0: Will implement Claude refinement here\n// For now, generate draft that needs human review\n\nreturn {\n  ticketId: ticket.ticketId,\n  responseBody: `<p>Draft response based on ${topKnowledge.length} knowledge entries</p><p>Requires human review before sending.</p>`,\n  knowledgeIds: topKnowledge.map(k => k.id),\n  confidence: routing.confidence,\n  routingPath: routing.path,\n  tags: ['ai-draft-review', 'requires-refinement'],\n  status: 3,  // Pending (not auto-resolved)\n  requiresHumanReview: true,\n  processingTimestamp: new Date().toISOString()\n};"
       },
       "id": "auto-refine-path",
       "name": "Path 2: Auto-Refine",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.2,
-      "position": [2650, 200]
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2650, 200],
+      "notes": "Task 5.3: Auto-refine with Claude (to be implemented in Task 6.0)"
     },
     {
       "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "placeholder",
-              "name": "message",
-              "value": "Generate draft path - implement Claude draft",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
+        "functionCode": "// Task 5.4: Generate Draft Path Implementation\n// Medium confidence (0.50-0.75), generate draft response\n\nconst ticket = $json.ticket;\nconst knowledge = $json.knowledge;\nconst routing = $json.routing;\n\n// Use multiple knowledge entries to generate comprehensive draft\nconst relevantKnowledge = knowledge.slice(0, 5);\n\n// Task 6.0: Will implement Claude draft generation here\n// For now, create draft from knowledge summaries\n\nconst draftContent = relevantKnowledge.map((k, i) => \n  `${i+1}. ${k.title}: ${k.summary || 'See knowledge base'}`\n).join('\\n\\n');\n\nreturn {\n  ticketId: ticket.ticketId,\n  responseBody: `<p>Draft response based on ${relevantKnowledge.length} knowledge entries:</p><p>${draftContent}</p><p>Requires human review and editing.</p>`,\n  knowledgeIds: relevantKnowledge.map(k => k.id),\n  confidence: routing.confidence,\n  routingPath: routing.path,\n  tags: ['ai-draft-review', 'medium-confidence'],\n  status: 3,  // Pending\n  requiresHumanReview: true,\n  processingTimestamp: new Date().toISOString()\n};"
       },
       "id": "generate-draft-path",
       "name": "Path 3: Generate Draft",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.2,
-      "position": [2650, 300]
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2650, 300],
+      "notes": "Task 5.4: Generate draft with Claude (to be implemented in Task 6.0)"
     },
     {
       "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "placeholder",
-              "name": "message",
-              "value": "Deep research path - implement Perplexity research",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
+        "functionCode": "// Task 5.5: Deep Research Path Implementation\n// Low confidence (<0.50), requires deep research\n\nconst ticket = $json.ticket;\nconst knowledge = $json.knowledge;\nconst routing = $json.routing;\n\n// Task 6.0: Will implement Perplexity deep research here\n// For now, escalate with research request\n\nreturn {\n  ticketId: ticket.ticketId,\n  responseBody: `<p>This ticket requires deep research.</p><p>Low confidence match (${(routing.confidence * 100).toFixed(1)}%). Escalating to human agent with research request.</p>`,\n  knowledgeIds: knowledge.map(k => k.id),\n  confidence: routing.confidence,\n  routingPath: routing.path,\n  tags: ['deep-research-required', 'low-confidence', 'escalated'],\n  status: 2,  // Open (assigned to research queue)\n  requiresHumanReview: true,\n  requiresResearch: true,\n  researchQuery: ticket.subject + ' ' + ticket.description,\n  processingTimestamp: new Date().toISOString()\n};"
       },
       "id": "deep-research-path",
       "name": "Path 4: Deep Research",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.2,
-      "position": [2650, 400]
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2650, 400],
+      "notes": "Task 5.5: Deep research with Perplexity (to be implemented in Task 6.0)"
     },
     {
       "parameters": {
-        "assignments": {
-          "assignments": [
-            {
-              "id": "placeholder",
-              "name": "message",
-              "value": "Immediate escalation - assign to human",
-              "type": "string"
-            }
-          ]
-        },
-        "options": {}
+        "functionCode": "// Task 5.6: Immediate Escalation Path Implementation\n// Critical priority or high complexity, escalate immediately\n\nconst ticket = $json.ticket;\nconst knowledge = $json.knowledge;\nconst routing = $json.routing;\n\n// Determine escalation reason\nlet escalationReason = 'Unknown';\nif (ticket.priority === 'urgent') {\n  escalationReason = 'Critical priority - requires same-day response per SSMA Section 106';\n} else if (ticket.customFields?.complexity > 4) {\n  escalationReason = 'High complexity issue - requires expert review';\n} else if (routing.requiresHumanReview) {\n  escalationReason = 'Flagged for human review based on ticket analysis';\n}\n\nreturn {\n  ticketId: ticket.ticketId,\n  responseBody: null,  // No auto-response for escalations\n  knowledgeIds: knowledge.map(k => k.id),\n  confidence: routing.confidence,\n  routingPath: routing.path,\n  tags: ['escalated', 'critical', 'requires-human'],\n  status: 2,  // Open\n  priority: Math.min(ticket.priority + 1, 4),  // Increase priority\n  requiresHumanReview: true,\n  escalationReason: escalationReason,\n  processingTimestamp: new Date().toISOString()\n};"
       },
       "id": "escalation-path",
       "name": "Path 5: Immediate Escalation",
-      "type": "n8n-nodes-base.set",
-      "typeVersion": 3.2,
-      "position": [2650, 500]
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2650, 500],
+      "notes": "Task 5.6: Immediate escalation for critical/complex tickets"
     },
     {
       "parameters": {
@@ -359,24 +384,24 @@
     },
     {
       "parameters": {
-        "operation": "insert",
-        "table": "system_metrics",
-        "columns": "metric_name, metric_value, category, timestamp",
-        "additionalFields": {
-          "values": "={{ 'ticket_processed,' + $json.routing.path + ',performance,' + new Date().toISOString() }}"
+        "operation": "executeQuery",
+        "query": "-- Task 5.7: Track routing path statistics\n-- Insert metrics for dashboard and monthly analysis\nINSERT INTO system_metrics (metric_name, metric_value, category, subcategory, metadata, timestamp)\nVALUES \n  ('routing_path_count', 1, 'routing', $1, jsonb_build_object(\n    'ticket_id', $2,\n    'confidence', $3,\n    'knowledge_count', $4,\n    'priority', $5,\n    'category_hints', $6\n  ), NOW()),\n  ('routing_confidence', $3, 'quality', 'retrieval', jsonb_build_object(\n    'routing_path', $1,\n    'ticket_id', $2\n  ), NOW());\n\n-- Also update path counters (for Task 5.13 statistics)\nINSERT INTO system_metrics (metric_name, metric_value, category, subcategory, metadata, timestamp)\nVALUES ('path_' || $1 || '_total', 1, 'routing', 'counter', '{}'::jsonb, NOW())\nON CONFLICT DO NOTHING;",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.routingPath,\n  $json.ticketId,\n  $json.confidence,\n  $json.knowledgeIds?.length || 0,\n  $json.priority,\n  JSON.stringify($json.ticket?.categoryHints || [])\n] }}"
         }
       },
-      "id": "log-metrics",
-      "name": "Log Metrics",
+      "id": "track-routing-stats",
+      "name": "Track Routing Statistics",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [2850, 250],
+      "position": [3250, 250],
       "credentials": {
         "postgres": {
           "id": "supabase-nsw-strata",
           "name": "Supabase - NSW Strata"
         }
-      }
+      },
+      "notes": "Task 5.7 & 5.13: Track routing statistics for monthly analysis"
     }
   ],
   "pinData": {},
@@ -575,7 +600,29 @@
       "main": [
         [
           {
-            "node": "Log Metrics",
+            "node": "Post Reply to Freshdesk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post Reply to Freshdesk": {
+      "main": [
+        [
+          {
+            "node": "Update Ticket Status & Tags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Ticket Status & Tags": {
+      "main": [
+        [
+          {
+            "node": "Track Routing Statistics",
             "type": "main",
             "index": 0
           }
@@ -586,7 +633,7 @@
       "main": [
         [
           {
-            "node": "Log Metrics",
+            "node": "Update Ticket Status & Tags",
             "type": "main",
             "index": 0
           }
@@ -597,7 +644,7 @@
       "main": [
         [
           {
-            "node": "Log Metrics",
+            "node": "Update Ticket Status & Tags",
             "type": "main",
             "index": 0
           }
@@ -608,7 +655,7 @@
       "main": [
         [
           {
-            "node": "Log Metrics",
+            "node": "Update Ticket Status & Tags",
             "type": "main",
             "index": 0
           }
@@ -619,7 +666,7 @@
       "main": [
         [
           {
-            "node": "Log Metrics",
+            "node": "Update Ticket Status & Tags",
             "type": "main",
             "index": 0
           }

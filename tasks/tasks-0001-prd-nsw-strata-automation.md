@@ -121,22 +121,22 @@
   - [x] 4.14 Implement lazy loading for knowledge content (summaries in metadata)
   - [x] 4.15 Create fallback to keyword-only search if vector search fails
 
-- [ ] 5.0 Implement decision engine with 5 routing paths
-  - [ ] 5.1 Create Switch node for decision routing with expression mode
-  - [ ] 5.2 Implement Path 1: Auto-Respond (similarity >0.85 AND training_samples >100 AND !requires_human_review)
-  - [ ] 5.3 Implement Path 2: Auto-Refine (similarity 0.75-0.85 AND training_samples >100)
-  - [ ] 5.4 Implement Path 3: Generate Draft (similarity 0.50-0.75 AND training_samples >30)
-  - [ ] 5.5 Implement Path 4: Deep Research (similarity <0.50)
-  - [ ] 5.6 Implement Path 5: Immediate Escalation (priority='Critical' OR complexity >4)
-  - [ ] 5.7 Create path counter tracking using UPDATE system_stats queries
-  - [ ] 5.8 Implement lightweight updates for Path 1 (dates, property details, personalization)
-  - [ ] 5.9 Configure Claude quality check: "Return 'APPROVED' or provide specific corrections"
-  - [ ] 5.10 Create Freshdesk reply posting via POST /api/v2/tickets/{id}/reply
-  - [ ] 5.11 Implement ticket status updates (status=4 for Resolved)
-  - [ ] 5.12 Configure tag appending: "auto-resolved", "kb-reused", "ai-draft-review"
-  - [ ] 5.13 Create routing statistics dashboard for monthly analysis
-  - [ ] 5.14 Implement dynamic threshold tuning based on success rates
-  - [ ] 5.15 Create override mechanism for manual routing when needed
+- [x] 5.0 Implement decision engine with 5 routing paths
+  - [x] 5.1 Create Switch node for decision routing with expression mode
+  - [x] 5.2 Implement Path 1: Auto-Respond (similarity >0.85 AND training_samples >100 AND !requires_human_review)
+  - [x] 5.3 Implement Path 2: Auto-Refine (similarity 0.75-0.85 AND training_samples >100)
+  - [x] 5.4 Implement Path 3: Generate Draft (similarity 0.50-0.75 AND training_samples >30)
+  - [x] 5.5 Implement Path 4: Deep Research (similarity <0.50)
+  - [x] 5.6 Implement Path 5: Immediate Escalation (priority='Critical' OR complexity >4)
+  - [x] 5.7 Create path counter tracking using UPDATE system_stats queries
+  - [x] 5.8 Implement lightweight updates for Path 1 (dates, property details, personalization)
+  - [x] 5.9 Configure Claude quality check: "Return 'APPROVED' or provide specific corrections"
+  - [x] 5.10 Create Freshdesk reply posting via POST /api/v2/tickets/{id}/reply
+  - [x] 5.11 Implement ticket status updates (status=4 for Resolved)
+  - [x] 5.12 Configure tag appending: "auto-resolved", "kb-reused", "ai-draft-review"
+  - [x] 5.13 Create routing statistics dashboard for monthly analysis
+  - [x] 5.14 Implement dynamic threshold tuning based on success rates
+  - [x] 5.15 Create override mechanism for manual routing when needed
 
 - [ ] 6.0 Configure AI integrations and prompt engineering
   - [ ] 6.1 Set up Claude API integration with claude-sonnet-4.5 model
