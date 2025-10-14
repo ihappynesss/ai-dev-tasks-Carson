@@ -1,0 +1,591 @@
+{
+  "name": "Main Ticket Processor",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "freshdesk-ticket",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "webhook-receiver",
+      "name": "Webhook - New Ticket",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "freshdesk-new-ticket"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\"status\": \"received\", \"ticket_id\": $json.ticket.id, \"timestamp\": new Date().toISOString()} }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              }
+            ]
+          }
+        }
+      },
+      "id": "immediate-response",
+      "name": "Immediate Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.headers['x-freshdesk-signature'] }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "verify-signature",
+      "name": "Verify Webhook Signature",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Verify HMAC-SHA256 signature from Freshdesk\nconst crypto = require('crypto');\n\nconst webhookSecret = $env.FRESHDESK_WEBHOOK_SECRET || 'your-webhook-secret';\nconst signature = $json.headers['x-freshdesk-signature'];\nconst payload = JSON.stringify($json.body);\n\n// Calculate expected signature\nconst expectedSignature = crypto\n  .createHmac('sha256', webhookSecret)\n  .update(payload)\n  .digest('base64');\n\n// Verify signature\nconst isValid = signature === expectedSignature;\n\nif (!isValid) {\n  throw new Error('Invalid webhook signature');\n}\n\nreturn $json;"
+      },
+      "id": "signature-verification",
+      "name": "HMAC Signature Verification",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 250]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.FRESHDESK_DOMAIN }}/api/v2/tickets/{{ $json.body.ticket.id }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "freshdeskApi",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "get-ticket-details",
+      "name": "Freshdesk - Get Ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1050, 250]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Normalize and enrich ticket text\nconst ticket = $json;\n\n// Remove HTML tags\nfunction stripHtml(html) {\n  if (!html) return '';\n  return html.replace(/<[^>]*>/g, '')\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"')\n    .trim();\n}\n\n// Extract NSW strata entities using regex\nfunction extractEntities(text) {\n  const entities = {\n    propertyAddresses: [],\n    lotNumbers: [],\n    strataPlanNumbers: [],\n    legislationReferences: [],\n    bylawNumbers: []\n  };\n\n  // Australian street addresses\n  const addressRegex = /\\d+\\s+[A-Za-z\\s]+(?:Street|St|Road|Rd|Avenue|Ave|Drive|Dr|Court|Ct|Place|Pl|Terrace|Tce|Parade|Pde|Boulevard|Blvd|Lane|Ln|Way|Highway|Hwy|Crescent|Cres),?\\s*(?:[A-Za-z\\s]+)?(?:NSW)?\\s*\\d{4}/gi;\n  entities.propertyAddresses = text.match(addressRegex) || [];\n\n  // Lot numbers (e.g., \"Lot 23\", \"Unit 5\", \"Apartment 12\")\n  const lotRegex = /(?:Lot|Unit|Apartment|Apt)\\s*#?\\s*(\\d+)/gi;\n  const lotMatches = text.matchAll(lotRegex);\n  for (const match of lotMatches) {\n    entities.lotNumbers.push(match[0]);\n  }\n\n  // Strata plan numbers (e.g., \"SP 12345\", \"Strata Plan 54321\")\n  const planRegex = /(?:SP|Strata\\s+Plan)\\s*#?\\s*(\\d+)/gi;\n  const planMatches = text.matchAll(planRegex);\n  for (const match of planMatches) {\n    entities.strataPlanNumbers.push(match[0]);\n  }\n\n  // NSW legislation references (e.g., \"SSMA 2015 Section 106\", \"Section 132 SSDA 2015\")\n  const legislationRegex = /(?:SSMA|SSDA)\\s*\\d{4}(?:\\s+Section\\s+\\d+)?|Section\\s+\\d+\\s+(?:SSMA|SSDA)\\s*\\d{4}/gi;\n  entities.legislationReferences = text.match(legislationRegex) || [];\n\n  // By-law numbers (e.g., \"By-law 3\", \"Model By-law 7\")\n  const bylawRegex = /(?:Model\\s+)?By-law\\s+#?\\s*(\\d+)/gi;\n  const bylawMatches = text.matchAll(bylawRegex);\n  for (const match of bylawMatches) {\n    entities.bylawNumbers.push(match[0]);\n  }\n\n  return entities;\n}\n\n// Extract keywords for NSW strata categories\nfunction extractKeywords(text) {\n  const keywords = {\n    maintenanceRepairs: ['roof', 'leak', 'plumbing', 'lift', 'elevator', 'repair', 'maintenance', 'damage', 'broken', 'malfunction', 'emergency'],\n    bylawCompliance: ['noise', 'parking', 'pet', 'dog', 'cat', 'smoking', 'rubbish', 'garbage', 'airbnb', 'short-term', 'letting', 'nuisance'],\n    financial: ['levy', 'levies', 'fee', 'payment', 'overdue', 'arrears', 'budget', 'insurance', 'claim'],\n    governance: ['meeting', 'AGM', 'EGM', 'committee', 'minutes', 'vote', 'resolution', 'quorum', 'by-law', 'bylaw'],\n    renovations: ['renovation', 'flooring', 'kitchen', 'bathroom', 'paint', 'tile', 'approval', 'alteration', 'work'],\n    disputes: ['complaint', 'dispute', 'NCAT', 'tribunal', 'mediation', 'conflict', 'neighbor', 'neighbour'],\n    security: ['security', 'access', 'CCTV', 'camera', 'safety', 'fire', 'hazard', 'lock', 'key'],\n    information: ['information', 'records', 'documents', 'certificate', 'strata plan', 'onboarding']\n  };\n\n  const lowerText = text.toLowerCase();\n  const matchedCategories = [];\n\n  for (const [category, words] of Object.entries(keywords)) {\n    for (const word of words) {\n      if (lowerText.includes(word.toLowerCase())) {\n        matchedCategories.push(category);\n        break;\n      }\n    }\n  }\n\n  return matchedCategories;\n}\n\n// Clean and concatenate subject + description\nconst subject = stripHtml(ticket.subject || '');\nconst description = stripHtml(ticket.description || '');\nconst normalizedText = `${subject}\\n\\n${description}`.trim();\n\n// Extract entities and keywords\nconst entities = extractEntities(normalizedText);\nconst categoryHints = extractKeywords(normalizedText);\n\n// Determine priority\nconst priorityMap = {\n  1: 'low',\n  2: 'medium',\n  3: 'high',\n  4: 'urgent'\n};\n\n// Build enriched ticket object\nconst enrichedTicket = {\n  // Original ticket data\n  ticketId: ticket.id,\n  subject: subject,\n  description: description,\n  normalizedText: normalizedText,\n  \n  // Metadata\n  priority: priorityMap[ticket.priority] || 'medium',\n  status: ticket.status,\n  created_at: ticket.created_at,\n  updated_at: ticket.updated_at,\n  due_by: ticket.due_by,\n  fr_due_by: ticket.fr_due_by,\n  \n  // Requester information\n  requester: {\n    id: ticket.requester_id,\n    name: ticket.requester?.name || null,\n    email: ticket.requester?.email || ticket.email || null,\n    phone: ticket.requester?.phone || null\n  },\n  \n  // Custom fields (property-specific)\n  customFields: ticket.custom_fields || {},\n  \n  // Extracted entities\n  entities: entities,\n  \n  // Category hints for classification\n  categoryHints: categoryHints,\n  \n  // Tags\n  tags: ticket.tags || [],\n  \n  // Attachments\n  hasAttachments: (ticket.attachments && ticket.attachments.length > 0),\n  attachmentCount: ticket.attachments?.length || 0,\n  \n  // Processing metadata\n  processingTimestamp: new Date().toISOString(),\n  textLength: normalizedText.length,\n  \n  // Full ticket object for reference\n  _original: ticket\n};\n\nreturn enrichedTicket;"
+      },
+      "id": "normalize-extract",
+      "name": "Normalize and Extract Entities",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 250]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.textLength }}",
+              "operation": "largerEqual",
+              "value2": 10
+            }
+          ],
+          "boolean": [
+            {
+              "value1": "={{ $json.ticketId !== undefined }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "validate-ticket",
+      "name": "Validate Ticket Data",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 250]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.OPENAI_API_URL || 'https://api.openai.com' }}/v1/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENAI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "specifyBody": "json",
+        "jsonBody": "={{ {\"model\": \"text-embedding-3-small\", \"input\": $json.normalizedText} }}",
+        "options": {}
+      },
+      "id": "generate-embedding",
+      "name": "Generate Embedding (OpenAI)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Vector similarity search using pgvector\\nWITH vector_search AS (\\n  SELECT\\n    id,\\n    title,\\n    content,\\n    metadata,\\n    embedding <-> $1::vector AS distance,\\n    1 - (embedding <-> $1::vector) AS similarity\\n  FROM knowledge_base\\n  WHERE metadata->>'status' = 'active'\\n    -- Optional category filter\\n    -- AND metadata->>'category' = $2\\n  ORDER BY distance\\n  LIMIT 10\\n),\\nkeyword_search AS (\\n  SELECT\\n    id,\\n    title,\\n    content,\\n    metadata,\\n    similarity(content, $2) AS keyword_score\\n  FROM knowledge_base\\n  WHERE metadata->>'status' = 'active'\\n    AND content % $2  -- Trigram similarity\\n  ORDER BY keyword_score DESC\\n  LIMIT 10\\n)\\n-- Reciprocal Rank Fusion\\nSELECT\\n  kb.id,\\n  kb.title,\\n  kb.content,\\n  kb.metadata,\\n  COALESCE(vs.similarity, 0) AS vector_similarity,\\n  COALESCE(ks.keyword_score, 0) AS keyword_score,\\n  (\\n    COALESCE(1.0 / (60 + vs_rank), 0) +\\n    COALESCE(1.0 / (60 + ks_rank), 0)\\n  ) AS combined_score\\nFROM knowledge_base kb\\nLEFT JOIN (\\n  SELECT id, similarity, ROW_NUMBER() OVER (ORDER BY distance) AS vs_rank\\n  FROM vector_search\\n) vs ON kb.id = vs.id\\nLEFT JOIN (\\n  SELECT id, keyword_score, ROW_NUMBER() OVER (ORDER BY keyword_score DESC) AS ks_rank\\n  FROM keyword_search\\n) ks ON kb.id = ks.id\\nWHERE vs.id IS NOT NULL OR ks.id IS NOT NULL\\nORDER BY combined_score DESC\\nLIMIT 5;",
+        "options": {
+          "queryReplacement": "={{ [$json.embedding, $json.normalizedText] }}"
+        }
+      },
+      "id": "hybrid-search",
+      "name": "Hybrid Search (Vector + Keyword)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1850, 200],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-ticket-knowledge",
+      "name": "Merge Ticket + Knowledge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [2050, 250]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Calculate confidence score and route decision\\nconst ticket = $input.first().json;\\nconst knowledgeEntries = $input.last().json;\\n\\n// Get highest similarity score\\nconst highestSimilarity = knowledgeEntries.length > 0 \\n  ? Math.max(...knowledgeEntries.map(k => k.vector_similarity || 0))\\n  : 0;\\n\\n// Count training samples for this category (simulated - would query training_examples table)\\nconst trainingSamples = 50; // TODO: Query actual training samples count\\n\\n// Determine routing path\\nlet routingPath = 'unknown';\\nlet requiresHumanReview = false;\\n\\nif (ticket.priority === 'urgent' || ticket.customFields?.complexity > 4) {\\n  routingPath = 'immediate-escalation';\\n  requiresHumanReview = true;\\n} else if (highestSimilarity > 0.85 && trainingSamples > 100 && !requiresHumanReview) {\\n  routingPath = 'auto-respond';\\n} else if (highestSimilarity >= 0.75 && highestSimilarity <= 0.85 && trainingSamples > 100) {\\n  routingPath = 'auto-refine';\\n} else if (highestSimilarity >= 0.50 && highestSimilarity < 0.75 && trainingSamples > 30) {\\n  routingPath = 'generate-draft';\\n} else if (highestSimilarity < 0.50) {\\n  routingPath = 'deep-research';\\n}\\n\\nreturn {\\n  ticket: ticket,\\n  knowledge: knowledgeEntries,\\n  routing: {\\n    path: routingPath,\\n    confidence: highestSimilarity,\\n    trainingSamples: trainingSamples,\\n    requiresHumanReview: requiresHumanReview,\\n    timestamp: new Date().toISOString()\\n  }\\n};"
+      },
+      "id": "decision-engine",
+      "name": "Decision Engine - Routing Logic",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2250, 250]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.routing.path }}",
+              "value2": "auto-respond"
+            }
+          ]
+        }
+      },
+      "id": "route-switch",
+      "name": "Route Switch",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [2450, 250]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "placeholder",
+              "name": "message",
+              "value": "Auto-respond path - implement Claude response generation",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "auto-respond-path",
+      "name": "Path 1: Auto-Respond",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [2650, 100]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "placeholder",
+              "name": "message",
+              "value": "Auto-refine path - implement Claude refinement",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "auto-refine-path",
+      "name": "Path 2: Auto-Refine",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [2650, 200]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "placeholder",
+              "name": "message",
+              "value": "Generate draft path - implement Claude draft",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "generate-draft-path",
+      "name": "Path 3: Generate Draft",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [2650, 300]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "placeholder",
+              "name": "message",
+              "value": "Deep research path - implement Perplexity research",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "deep-research-path",
+      "name": "Path 4: Deep Research",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [2650, 400]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "placeholder",
+              "name": "message",
+              "value": "Immediate escalation - assign to human",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "escalation-path",
+      "name": "Path 5: Immediate Escalation",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [2650, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Log error and send to error handler workflow\\nconst error = $input.first().json;\\n\\nconsole.error('Ticket processing failed:', error);\\n\\nreturn {\\n  error: true,\\n  message: 'Ticket processing failed',\\n  details: error,\\n  timestamp: new Date().toISOString()\\n};"
+      },
+      "id": "error-handler",
+      "name": "Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 450]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "system_metrics",
+        "columns": "metric_name, metric_value, category, timestamp",
+        "additionalFields": {
+          "values": "={{ 'ticket_processed,' + $json.routing.path + ',performance,' + new Date().toISOString() }}"
+        }
+      },
+      "id": "log-metrics",
+      "name": "Log Metrics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2850, 250],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - New Ticket": {
+      "main": [
+        [
+          {
+            "node": "Immediate Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Immediate Response": {
+      "main": [
+        [
+          {
+            "node": "Verify Webhook Signature",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify Webhook Signature": {
+      "main": [
+        [
+          {
+            "node": "HMAC Signature Verification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HMAC Signature Verification": {
+      "main": [
+        [
+          {
+            "node": "Freshdesk - Get Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Freshdesk - Get Ticket": {
+      "main": [
+        [
+          {
+            "node": "Normalize and Extract Entities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize and Extract Entities": {
+      "main": [
+        [
+          {
+            "node": "Validate Ticket Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Ticket Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Embedding (OpenAI)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Merge Ticket + Knowledge",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Error Handler",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Embedding (OpenAI)": {
+      "main": [
+        [
+          {
+            "node": "Hybrid Search (Vector + Keyword)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hybrid Search (Vector + Keyword)": {
+      "main": [
+        [
+          {
+            "node": "Merge Ticket + Knowledge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Ticket + Knowledge": {
+      "main": [
+        [
+          {
+            "node": "Decision Engine - Routing Logic",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Decision Engine - Routing Logic": {
+      "main": [
+        [
+          {
+            "node": "Route Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Switch": {
+      "main": [
+        [
+          {
+            "node": "Path 1: Auto-Respond",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Path 2: Auto-Refine",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Path 3: Generate Draft",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Path 4: Deep Research",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Path 5: Immediate Escalation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Path 1: Auto-Respond": {
+      "main": [
+        [
+          {
+            "node": "Log Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Path 2: Auto-Refine": {
+      "main": [
+        [
+          {
+            "node": "Log Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Path 3: Generate Draft": {
+      "main": [
+        [
+          {
+            "node": "Log Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Path 4: Deep Research": {
+      "main": [
+        [
+          {
+            "node": "Log Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Path 5: Immediate Escalation": {
+      "main": [
+        [
+          {
+            "node": "Log Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "error-handler"
+  },
+  "versionId": "1.0.0",
+  "id": "main-ticket-processor",
+  "meta": {
+    "instanceId": "nsw-strata-automation"
+  },
+  "tags": [
+    {
+      "name": "production",
+      "id": "prod"
+    },
+    {
+      "name": "freshdesk",
+      "id": "freshdesk"
+    }
+  ]
+}

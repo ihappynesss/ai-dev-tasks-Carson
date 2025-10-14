@@ -79,9 +79,9 @@
   - [x] 2.15 Set up database backup strategy with daily snapshots and 30-day retention
 
 - [ ] 3.0 Implement core webhook and ticket ingestion workflows
-  - [ ] 3.1 Create main-ticket-processor.json workflow for new Freshdesk tickets
-  - [ ] 3.2 Create reply-handler.json workflow for customer responses and multi-turn conversations
-  - [ ] 3.3 Create scheduled-maintenance.json workflow for automated operations
+  - [x] 3.1 Create main-ticket-processor.json workflow for new Freshdesk tickets
+  - [x] 3.2 Create reply-handler.json workflow for customer responses and multi-turn conversations
+  - [x] 3.3 Create scheduled-maintenance.json workflow for automated operations
   - [ ] 3.4 Create manual-trigger.json workflow for on-demand processing with human review
   - [ ] 3.5 Create batch-processor.json workflow for bulk knowledge base updates
   - [ ] 3.6 Configure Freshdesk webhook automation for new ticket creation events

@@ -1,0 +1,589 @@
+{
+  "name": "Reply Handler - Multi-turn Conversations",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "freshdesk-reply",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "webhook-reply",
+      "name": "Webhook - Ticket Reply",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1.1,
+      "position": [250, 300],
+      "webhookId": "freshdesk-ticket-reply"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ {\"status\": \"received\", \"ticket_id\": $json.body?.ticket?.id, \"timestamp\": new Date().toISOString()} }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "immediate-ack",
+      "name": "Immediate Acknowledgment",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.body?.is_reply }}",
+              "value2": true
+            },
+            {
+              "value1": "={{ $json.body?.performer_type === 'customer' || $json.body?.performer_type === 'requester' }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "filter-customer-replies",
+      "name": "Filter Customer Replies Only",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.FRESHDESK_DOMAIN }}/api/v2/tickets/{{ $json.body.ticket.id }}/conversations",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "freshdeskApi",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "get-conversation-history",
+      "name": "Freshdesk - Get Conversation History",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 250]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  id,\n  ticket_id,\n  conversation_history,\n  current_knowledge_id,\n  confidence_level,\n  initial_confidence,\n  turn_count,\n  escalation_ready,\n  escalation_reason,\n  sentiment_score,\n  sentiment_trend,\n  last_interaction_at,\n  created_at,\n  updated_at\nFROM conversation_state\nWHERE ticket_id = $1\nLIMIT 1;",
+        "options": {
+          "queryReplacement": "={{ [$json.body.ticket.id] }}"
+        }
+      },
+      "id": "get-conversation-state",
+      "name": "Get Conversation State from DB",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [850, 350],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "merge-conversation-data",
+      "name": "Merge Conversation Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Analyze conversation history and customer reply\nconst ticketData = $input.first().json;\nconst conversationHistory = ticketData.conversations || [];\nconst conversationState = $input.last().json || null;\n\n// Get latest customer reply\nconst customerReplies = conversationHistory.filter(c => \n  c.user_id === ticketData.body?.ticket?.requester_id || \n  c.incoming === true\n);\nconst latestReply = customerReplies[customerReplies.length - 1];\n\nif (!latestReply) {\n  throw new Error('No customer reply found');\n}\n\n// Extract reply text (remove HTML)\nfunction stripHtml(html) {\n  if (!html) return '';\n  return html.replace(/<[^>]*>/g, '')\n    .replace(/&nbsp;/g, ' ')\n    .replace(/&amp;/g, '&')\n    .replace(/&lt;/g, '<')\n    .replace(/&gt;/g, '>')\n    .replace(/&quot;/g, '\"')\n    .trim();\n}\n\nconst replyText = stripHtml(latestReply.body_text || latestReply.body);\n\n// Sentiment analysis (simple keyword-based)\nfunction analyzeSentiment(text) {\n  const lowerText = text.toLowerCase();\n  \n  // Positive indicators\n  const positiveWords = ['thank', 'thanks', 'grateful', 'appreciate', 'resolved', 'solved', 'fixed', 'perfect', 'great', 'excellent', 'satisfied', 'happy', 'helpful'];\n  const positiveCount = positiveWords.filter(word => lowerText.includes(word)).length;\n  \n  // Negative indicators\n  const negativeWords = ['not resolved', 'still issue', 'not fixed', 'worse', 'frustrated', 'angry', 'disappointed', 'unacceptable', 'poor', 'terrible', 'unhappy', 'escalate', 'complaint'];\n  const negativeCount = negativeWords.filter(word => lowerText.includes(word)).length;\n  \n  // Clarification/continuation indicators\n  const clarificationWords = ['however', 'but', 'also', 'additionally', 'what about', 'question', 'clarify', 'explain', 'understand', 'confused'];\n  const clarificationCount = clarificationWords.filter(word => lowerText.includes(word)).length;\n  \n  // Calculate sentiment score (-1 to 1)\n  const totalWords = positiveCount + negativeCount || 1;\n  const sentimentScore = (positiveCount - negativeCount) / totalWords;\n  \n  // Determine sentiment trend\n  let sentimentTrend = 'neutral';\n  if (sentimentScore > 0.3) sentimentTrend = 'improving';\n  else if (sentimentScore < -0.3) sentimentTrend = 'declining';\n  \n  // Determine intent\n  let intent = 'unknown';\n  if (positiveCount > negativeCount && positiveCount > clarificationCount) {\n    intent = 'satisfied';\n  } else if (negativeCount > positiveCount) {\n    intent = 'dissatisfied';\n  } else if (clarificationCount > 0) {\n    intent = 'clarification';\n  } else {\n    intent = 'continuation';\n  }\n  \n  return {\n    score: sentimentScore,\n    trend: sentimentTrend,\n    intent: intent,\n    positiveIndicators: positiveCount,\n    negativeIndicators: negativeCount,\n    clarificationIndicators: clarificationCount\n  };\n}\n\nconst sentiment = analyzeSentiment(replyText);\n\n// Determine if ticket should be closed\nconst shouldClose = sentiment.intent === 'satisfied' && sentiment.score > 0.5;\n\n// Determine if should escalate\nconst turnCount = conversationState?.turn_count || 0;\nconst newTurnCount = turnCount + 1;\nconst shouldEscalate = (\n  newTurnCount >= 3 || \n  sentiment.intent === 'dissatisfied' ||\n  sentiment.score < -0.5 ||\n  conversationState?.escalation_ready === true\n);\n\n// Build conversation context\nconst conversationContext = {\n  ticketId: ticketData.body?.ticket?.id,\n  subject: ticketData.body?.ticket?.subject,\n  currentReply: replyText,\n  replyTimestamp: latestReply.created_at,\n  \n  // Conversation state\n  turnCount: newTurnCount,\n  previousKnowledgeId: conversationState?.current_knowledge_id,\n  previousConfidence: conversationState?.confidence_level,\n  initialConfidence: conversationState?.initial_confidence || null,\n  \n  // History (last 5 turns)\n  recentHistory: conversationHistory.slice(-5).map(c => ({\n    role: c.incoming ? 'customer' : 'agent',\n    message: stripHtml(c.body_text || c.body),\n    timestamp: c.created_at\n  })),\n  \n  // Sentiment analysis\n  sentiment: sentiment,\n  \n  // Decisions\n  shouldClose: shouldClose,\n  shouldEscalate: shouldEscalate,\n  requiresNewResearch: sentiment.intent === 'clarification' || sentiment.intent === 'continuation',\n  \n  // Metadata\n  processingTimestamp: new Date().toISOString()\n};\n\nreturn conversationContext;"
+      },
+      "id": "analyze-conversation",
+      "name": "Analyze Conversation Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.shouldClose }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-should-close",
+      "name": "Should Close Ticket?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.FRESHDESK_DOMAIN }}/api/v2/tickets/{{ $json.ticketId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\"status\": 5, \"tags\": [\"auto-closed\", \"sentiment-positive\"]} }}",
+        "options": {
+          "redirect": {
+            "redirect": {}
+          }
+        }
+      },
+      "id": "close-ticket",
+      "name": "Freshdesk - Close Ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "freshdesk-api-auth",
+          "name": "Freshdesk API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.FRESHDESK_DOMAIN }}/api/v2/tickets/{{ $json.ticketId }}/reply",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\"body\": \"Thank you for confirming the issue has been resolved. We're glad we could help! This ticket is now closed. If you have any other questions or concerns, please feel free to create a new ticket.\\n\\nBest regards,\\nStrata Management Team\"} }}",
+        "options": {}
+      },
+      "id": "send-closing-message",
+      "name": "Send Closing Message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1850, 200],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "freshdesk-api-auth",
+          "name": "Freshdesk API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.shouldEscalate }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-should-escalate",
+      "name": "Should Escalate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1650, 350]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate escalation summary\nconst context = $json;\n\nconst summary = `\n**Ticket Escalation Summary**\n\nTicket ID: ${context.ticketId}\nSubject: ${context.subject}\nTurn Count: ${context.turnCount}\n\n**Reason for Escalation:**\n${context.turnCount >= 3 ? '- Multiple unsuccessful resolution attempts (3+ turns)' : ''}\n${context.sentiment.intent === 'dissatisfied' ? '- Customer expressed dissatisfaction' : ''}\n${context.sentiment.score < -0.5 ? '- Negative sentiment detected' : ''}\n\n**Recent Conversation:**\n${context.recentHistory.map(h => `[${h.role.toUpperCase()}]: ${h.message.substring(0, 200)}...`).join('\\n\\n')}\n\n**Latest Customer Reply:**\n${context.currentReply}\n\n**Sentiment Analysis:**\n- Score: ${context.sentiment.score.toFixed(2)}\n- Trend: ${context.sentiment.trend}\n- Intent: ${context.sentiment.intent}\n\n**Recommended Action:**\nThis ticket requires human review and personalized response. Please address the customer's concerns directly.\n`.trim();\n\nreturn {\n  ...context,\n  escalationSummary: summary\n};"
+      },
+      "id": "generate-escalation-summary",
+      "name": "Generate Escalation Summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1850, 350]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.FRESHDESK_DOMAIN }}/api/v2/tickets/{{ $json.ticketId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\"status\": 2, \"priority\": 3, \"tags\": [\"escalated\", \"requires-human-review\"], \"internal_note\": $json.escalationSummary} }}",
+        "options": {}
+      },
+      "id": "escalate-ticket",
+      "name": "Freshdesk - Escalate Ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [2050, 350],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "freshdesk-api-auth",
+          "name": "Freshdesk API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.OPENAI_API_URL || 'https://api.openai.com' }}/v1/embeddings",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $env.OPENAI_API_KEY }}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\"model\": \"text-embedding-3-small\", \"input\": $json.currentReply} }}",
+        "options": {}
+      },
+      "id": "generate-reply-embedding",
+      "name": "Generate Reply Embedding",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1850, 450]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Re-search knowledge base with updated context\nSELECT\n  kb.id,\n  kb.title,\n  kb.content,\n  kb.metadata,\n  (kb.embedding <-> $1::vector) AS distance,\n  1 - (kb.embedding <-> $1::vector) AS similarity\nFROM knowledge_base kb\nWHERE kb.metadata->>'status' = 'active'\n  -- Filter by previous knowledge category if available\n  AND (kb.metadata->>'category' = $2 OR $2 IS NULL)\nORDER BY distance\nLIMIT 3;",
+        "options": {
+          "queryReplacement": "={{ [$json.data[0].embedding, $json.previousCategory || null] }}"
+        }
+      },
+      "id": "re-search-knowledge",
+      "name": "Re-search Knowledge Base",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2050, 450],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "placeholder",
+              "name": "response",
+              "value": "Generate contextual response using Claude AI with conversation history",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "generate-contextual-response",
+      "name": "Generate Contextual Response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.2,
+      "position": [2250, 450]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO conversation_state (\n  ticket_id,\n  conversation_history,\n  current_knowledge_id,\n  confidence_level,\n  initial_confidence,\n  turn_count,\n  escalation_ready,\n  sentiment_score,\n  sentiment_trend,\n  last_interaction_at\n) VALUES (\n  $1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9, $10\n)\nON CONFLICT (ticket_id) DO UPDATE SET\n  conversation_history = $2::jsonb,\n  current_knowledge_id = $3,\n  confidence_level = $4,\n  turn_count = $6,\n  escalation_ready = $7,\n  sentiment_score = $8,\n  sentiment_trend = $9,\n  last_interaction_at = $10,\n  updated_at = NOW()\nRETURNING *;",
+        "options": {
+          "queryReplacement": "={{ [\n            $json.ticketId,\n            JSON.stringify($json.recentHistory),\n            $json.currentKnowledgeId || null,\n            $json.confidence || 0.5,\n            $json.initialConfidence || $json.confidence || 0.5,\n            $json.turnCount,\n            $json.shouldEscalate,\n            $json.sentiment.score,\n            $json.sentiment.trend,\n            $json.processingTimestamp\n          ] }}"
+        }
+      },
+      "id": "update-conversation-state",
+      "name": "Update Conversation State",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2450, 450],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "system_metrics",
+        "columns": "metric_name, metric_value, category, metadata, timestamp",
+        "additionalFields": {}
+      },
+      "id": "log-conversation-metrics",
+      "name": "Log Conversation Metrics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2650, 300],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook - Ticket Reply": {
+      "main": [
+        [
+          {
+            "node": "Immediate Acknowledgment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Immediate Acknowledgment": {
+      "main": [
+        [
+          {
+            "node": "Filter Customer Replies Only",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Customer Replies Only": {
+      "main": [
+        [
+          {
+            "node": "Freshdesk - Get Conversation History",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Get Conversation State from DB",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Freshdesk - Get Conversation History": {
+      "main": [
+        [
+          {
+            "node": "Merge Conversation Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Conversation State from DB": {
+      "main": [
+        [
+          {
+            "node": "Merge Conversation Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Conversation Data": {
+      "main": [
+        [
+          {
+            "node": "Analyze Conversation Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Analyze Conversation Context": {
+      "main": [
+        [
+          {
+            "node": "Should Close Ticket?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Close Ticket?": {
+      "main": [
+        [
+          {
+            "node": "Freshdesk - Close Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Should Escalate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Freshdesk - Close Ticket": {
+      "main": [
+        [
+          {
+            "node": "Send Closing Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Closing Message": {
+      "main": [
+        [
+          {
+            "node": "Log Conversation Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Escalate?": {
+      "main": [
+        [
+          {
+            "node": "Generate Escalation Summary",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Reply Embedding",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Escalation Summary": {
+      "main": [
+        [
+          {
+            "node": "Freshdesk - Escalate Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Freshdesk - Escalate Ticket": {
+      "main": [
+        [
+          {
+            "node": "Log Conversation Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Reply Embedding": {
+      "main": [
+        [
+          {
+            "node": "Re-search Knowledge Base",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Re-search Knowledge Base": {
+      "main": [
+        [
+          {
+            "node": "Generate Contextual Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Contextual Response": {
+      "main": [
+        [
+          {
+            "node": "Update Conversation State",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Conversation State": {
+      "main": [
+        [
+          {
+            "node": "Log Conversation Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "error-handler"
+  },
+  "versionId": "1.0.0",
+  "id": "reply-handler",
+  "meta": {
+    "instanceId": "nsw-strata-automation"
+  },
+  "tags": [
+    {
+      "name": "production",
+      "id": "prod"
+    },
+    {
+      "name": "freshdesk",
+      "id": "freshdesk"
+    },
+    {
+      "name": "conversation",
+      "id": "conversation"
+    }
+  ]
+}

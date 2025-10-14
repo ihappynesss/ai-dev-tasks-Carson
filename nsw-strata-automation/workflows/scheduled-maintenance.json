@@ -1,0 +1,475 @@
+{
+  "name": "Scheduled Maintenance - Knowledge Base Operations",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-nightly",
+      "name": "Cron - Nightly at 2 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Find duplicate knowledge entries using vector similarity\nWITH similarity_pairs AS (\n  SELECT\n    kb1.id AS id1,\n    kb1.title AS title1,\n    kb2.id AS id2,\n    kb2.title AS title2,\n    kb1.embedding <-> kb2.embedding AS distance,\n    1 - (kb1.embedding <-> kb2.embedding) AS similarity\n  FROM knowledge_base kb1\n  CROSS JOIN knowledge_base kb2\n  WHERE kb1.id < kb2.id  -- Avoid duplicate pairs and self-comparison\n    AND kb1.metadata->>'status' = 'active'\n    AND kb2.metadata->>'status' = 'active'\n    AND (kb1.embedding <-> kb2.embedding) < 0.1  -- Very similar (distance < 0.1)\n)\nSELECT\n  id1,\n  title1,\n  id2,\n  title2,\n  distance,\n  similarity\nFROM similarity_pairs\nORDER BY similarity DESC\nLIMIT 50;",
+        "options": {}
+      },
+      "id": "find-duplicates",
+      "name": "Find Duplicate Knowledge Entries",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [450, 200],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Calculate success rates for knowledge entries\nWITH entry_usage AS (\n  SELECT\n    te.category,\n    COUNT(*) AS total_uses,\n    COUNT(*) FILTER (WHERE te.customer_satisfaction >= 4) AS successful_uses,\n    AVG(te.customer_satisfaction) AS avg_satisfaction\n  FROM training_examples te\n  WHERE te.created_at > NOW() - INTERVAL '90 days'\n  GROUP BY te.category\n)\nSELECT\n  kb.id,\n  kb.title,\n  kb.metadata->>'category' AS category,\n  kb.metadata->>'success_rate' AS current_success_rate,\n  COALESCE(\n    eu.successful_uses::float / NULLIF(eu.total_uses, 0),\n    (kb.metadata->>'success_rate')::float\n  ) AS calculated_success_rate,\n  eu.total_uses,\n  eu.avg_satisfaction\nFROM knowledge_base kb\nLEFT JOIN entry_usage eu ON kb.metadata->>'category' = eu.category\nWHERE kb.metadata->>'status' = 'active'\n  AND (\n    eu.total_uses > 10  -- Only update if sufficient data\n    AND (\n      COALESCE(eu.successful_uses::float / NULLIF(eu.total_uses, 0), 0) < 0.7  -- Flag low performers\n      OR ABS(\n        COALESCE(eu.successful_uses::float / NULLIF(eu.total_uses, 0), 0) - \n        COALESCE((kb.metadata->>'success_rate')::float, 0)\n      ) > 0.1  -- Significant change\n    )\n  )\nORDER BY calculated_success_rate ASC\nLIMIT 20;",
+        "options": {}
+      },
+      "id": "calculate-success-rates",
+      "name": "Calculate Success Rates",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Find stale knowledge entries (not used in 6+ months)\nSELECT\n  kb.id,\n  kb.title,\n  kb.metadata->>'category' AS category,\n  kb.updated_at,\n  EXTRACT(EPOCH FROM (NOW() - kb.updated_at)) / 86400 AS days_since_update\nFROM knowledge_base kb\nWHERE kb.metadata->>'status' = 'active'\n  AND kb.updated_at < NOW() - INTERVAL '6 months'\nORDER BY kb.updated_at ASC\nLIMIT 30;",
+        "options": {}
+      },
+      "id": "find-stale-entries",
+      "name": "Find Stale Knowledge Entries",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [450, 400],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Detect recurring issues (similar tickets in past 7 days)\nWITH recent_tickets AS (\n  SELECT\n    ticket_text,\n    category,\n    embedding,\n    created_at\n  FROM training_examples\n  WHERE created_at > NOW() - INTERVAL '7 days'\n),\nsimilarity_clusters AS (\n  SELECT\n    rt1.ticket_text AS ticket1,\n    rt2.ticket_text AS ticket2,\n    rt1.category,\n    rt1.embedding <-> rt2.embedding AS distance,\n    1 - (rt1.embedding <-> rt2.embedding) AS similarity\n  FROM recent_tickets rt1\n  CROSS JOIN recent_tickets rt2\n  WHERE rt1.created_at < rt2.created_at\n    AND (rt1.embedding <-> rt2.embedding) < 0.1  -- Very similar\n)\nSELECT\n  category,\n  COUNT(*) AS cluster_size,\n  AVG(similarity) AS avg_similarity,\n  ARRAY_AGG(DISTINCT ticket1) AS sample_tickets\nFROM similarity_clusters\nGROUP BY category\nHAVING COUNT(*) >= 3  -- At least 3 similar tickets\nORDER BY cluster_size DESC\nLIMIT 10;",
+        "options": {}
+      },
+      "id": "detect-recurring-issues",
+      "name": "Detect Recurring Issues",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [450, 500],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "check-duplicates-found",
+      "name": "Duplicates Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate duplicate merge report\nconst duplicates = $input.all();\n\nif (duplicates.length === 0) {\n  return { report: 'No duplicates found', count: 0 };\n}\n\nconst report = `\n**Duplicate Knowledge Entries Detected**\n\nFound ${duplicates.length} potential duplicate pairs:\n\n${duplicates.map((d, i) => `\n${i + 1}. **Similarity: ${(d.json.similarity * 100).toFixed(1)}%**\n   - Entry 1: ${d.json.title1} (ID: ${d.json.id1})\n   - Entry 2: ${d.json.title2} (ID: ${d.json.id2})\n   - Action: Review and merge if appropriate\n`).join('\\n')}\n\n**Recommended Actions:**\n1. Review each pair manually\n2. Merge duplicates using Claude AI to consolidate information\n3. Archive redundant entries\n4. Update references in workflows\n\n**Generated:** ${new Date().toISOString()}\n`.trim();\n\nreturn {\n  report: report,\n  count: duplicates.length,\n  duplicates: duplicates.map(d => d.json)\n};"
+      },
+      "id": "generate-duplicate-report",
+      "name": "Generate Duplicate Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 150]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "check-low-performers",
+      "name": "Low Performers Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate low performance report\nconst lowPerformers = $input.all();\n\nif (lowPerformers.length === 0) {\n  return { report: 'No low-performing entries found', count: 0 };\n}\n\nconst report = `\n**Low-Performing Knowledge Entries**\n\nFound ${lowPerformers.length} entries requiring review:\n\n${lowPerformers.map((entry, i) => {\n  const data = entry.json;\n  return `\n${i + 1}. **${data.title}**\n   - Category: ${data.category}\n   - Current Success Rate: ${((data.current_success_rate || 0) * 100).toFixed(1)}%\n   - Calculated Success Rate: ${((data.calculated_success_rate || 0) * 100).toFixed(1)}%\n   - Total Uses (90 days): ${data.total_uses || 0}\n   - Avg Satisfaction: ${(data.avg_satisfaction || 0).toFixed(2)}/5\n   - Status: ${data.calculated_success_rate < 0.7 ? '⚠️ Below 70% threshold' : '📊 Significant change detected'}\n`;\n}).join('\\n')}\n\n**Recommended Actions:**\n1. Review and update content based on recent feedback\n2. Add clarifications or additional steps\n3. Update NSW legislation references if outdated\n4. Consider splitting complex entries\n5. Add more examples or scenarios\n\n**Generated:** ${new Date().toISOString()}\n`.trim();\n\nreturn {\n  report: report,\n  count: lowPerformers.length,\n  entries: lowPerformers.map(e => e.json)\n};"
+      },
+      "id": "generate-performance-report",
+      "name": "Generate Performance Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 250]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "check-stale-entries",
+      "name": "Stale Entries Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate stale entries report\nconst staleEntries = $input.all();\n\nif (staleEntries.length === 0) {\n  return { report: 'No stale entries found', count: 0 };\n}\n\nconst report = `\n**Stale Knowledge Entries Requiring Review**\n\nFound ${staleEntries.length} entries not updated in 6+ months:\n\n${staleEntries.map((entry, i) => {\n  const data = entry.json;\n  return `\n${i + 1}. **${data.title}**\n   - Category: ${data.category}\n   - Last Updated: ${new Date(data.updated_at).toLocaleDateString()}\n   - Days Since Update: ${Math.floor(data.days_since_update)}\n   - Action Required: Review for accuracy and relevance\n`;\n}).join('\\n')}\n\n**Recommended Actions:**\n1. Verify NSW legislation references are current (check for 2025 reforms)\n2. Update success rates and statistics\n3. Add recent examples or case studies\n4. Check for broken links to related entries\n5. Archive if no longer relevant\n\n**Generated:** ${new Date().toISOString()}\n`.trim();\n\nreturn {\n  report: report,\n  count: staleEntries.length,\n  entries: staleEntries.map(e => e.json)\n};"
+      },
+      "id": "generate-stale-report",
+      "name": "Generate Stale Entries Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 350]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{ $json.length }}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "check-recurring-issues",
+      "name": "Recurring Issues Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 500]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate recurring issues report\nconst recurringIssues = $input.all();\n\nif (recurringIssues.length === 0) {\n  return { report: 'No recurring issues detected', count: 0 };\n}\n\nconst report = `\n**Recurring Issues Detected (Past 7 Days)**\n\nFound ${recurringIssues.length} patterns of similar tickets:\n\n${recurringIssues.map((issue, i) => {\n  const data = issue.json;\n  return `\n${i + 1}. **Category: ${data.category}**\n   - Cluster Size: ${data.cluster_size} similar tickets\n   - Average Similarity: ${((data.avg_similarity || 0) * 100).toFixed(1)}%\n   - Sample Tickets:\n${(data.sample_tickets || []).slice(0, 3).map(t => `     - ${t.substring(0, 100)}...`).join('\\n')}\n   - ⚠️ **Action:** Consider creating or updating knowledge entry\n`;\n}).join('\\n')}\n\n**Proactive Response Recommendations:**\n1. Create new knowledge base entries for recurring issues\n2. Update existing entries with recent scenarios\n3. Consider sending proactive communication to all owners\n4. Schedule preventive maintenance if systemic issue\n5. Update FAQs on website\n\n**Generated:** ${new Date().toISOString()}\n`.trim();\n\nreturn {\n  report: report,\n  count: recurringIssues.length,\n  issues: recurringIssues.map(i => i.json)\n};"
+      },
+      "id": "generate-recurring-report",
+      "name": "Generate Recurring Issues Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 450]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "multiplex",
+        "options": {}
+      },
+      "id": "merge-all-reports",
+      "name": "Merge All Reports",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 2.1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Compile comprehensive maintenance report\nconst reports = $input.all();\n\nconst timestamp = new Date().toISOString();\nconst date = new Date().toLocaleDateString('en-AU', { \n  weekday: 'long', \n  year: 'numeric', \n  month: 'long', \n  day: 'numeric' \n});\n\nconst duplicateReport = reports.find(r => r.json.duplicates) || { json: { report: 'No duplicates found', count: 0 } };\nconst performanceReport = reports.find(r => r.json.entries) || { json: { report: 'No low performers found', count: 0 } };\nconst staleReport = reports.find(r => r.json.entries && r.json.report.includes('Stale')) || { json: { report: 'No stale entries found', count: 0 } };\nconst recurringReport = reports.find(r => r.json.issues) || { json: { report: 'No recurring issues detected', count: 0 } };\n\nconst totalIssues = \n  (duplicateReport.json.count || 0) + \n  (performanceReport.json.count || 0) + \n  (staleReport.json.count || 0) + \n  (recurringReport.json.count || 0);\n\nconst comprehensiveReport = `\n# NSW Strata Automation - Nightly Maintenance Report\n**Date:** ${date}\n**Generated:** ${timestamp}\n\n---\n\n## Executive Summary\n\n**Total Issues Found:** ${totalIssues}\n- Duplicate Entries: ${duplicateReport.json.count || 0}\n- Low-Performing Entries: ${performanceReport.json.count || 0}\n- Stale Entries: ${staleReport.json.count || 0}\n- Recurring Issues: ${recurringReport.json.count || 0}\n\n${totalIssues === 0 ? '✅ **All systems operating normally. No issues detected.**' : '⚠️ **Action required on flagged items below.**'}\n\n---\n\n## 1. Duplicate Knowledge Entries\n\n${duplicateReport.json.report}\n\n---\n\n## 2. Low-Performing Knowledge Entries\n\n${performanceReport.json.report}\n\n---\n\n## 3. Stale Knowledge Entries\n\n${staleReport.json.report}\n\n---\n\n## 4. Recurring Issues & Proactive Opportunities\n\n${recurringReport.json.report}\n\n---\n\n## Database Statistics\n\n_(Will be populated with actual queries)_\n\n**Knowledge Base:**\n- Total Active Entries: TBD\n- Total Training Examples: TBD\n- Average Success Rate: TBD%\n\n**Recent Activity (Past 7 Days):**\n- Tickets Processed: TBD\n- Auto-Response Rate: TBD%\n- Average Confidence Score: TBD\n\n---\n\n## Next Scheduled Maintenance\n\n**Tomorrow:** ${new Date(Date.now() + 86400000).toLocaleDateString('en-AU', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })} at 2:00 AM AEST\n\n---\n\n*This is an automated report generated by the NSW Strata Automation Scheduled Maintenance workflow.*\n`.trim();\n\nreturn {\n  report: comprehensiveReport,\n  summary: {\n    totalIssues: totalIssues,\n    duplicates: duplicateReport.json.count || 0,\n    lowPerformers: performanceReport.json.count || 0,\n    staleEntries: staleReport.json.count || 0,\n    recurringIssues: recurringReport.json.count || 0,\n    timestamp: timestamp\n  },\n  individualReports: {\n    duplicates: duplicateReport.json,\n    performance: performanceReport.json,\n    stale: staleReport.json,\n    recurring: recurringReport.json\n  }\n};"
+      },
+      "id": "compile-comprehensive-report",
+      "name": "Compile Comprehensive Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"text\": \"NSW Strata Automation - Nightly Maintenance Report\",\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": {\n        \"type\": \"plain_text\",\n        \"text\": \"🔧 Nightly Maintenance Report\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": `*Total Issues Found:* ${$json.summary.totalIssues}\\n\\n` +\n                `• Duplicates: ${$json.summary.duplicates}\\n` +\n                `• Low Performers: ${$json.summary.lowPerformers}\\n` +\n                `• Stale Entries: ${$json.summary.staleEntries}\\n` +\n                `• Recurring Issues: ${$json.summary.recurringIssues}`\n      }\n    },\n    {\n      \"type\": \"divider\"\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": $json.summary.totalIssues === 0 \n          ? \"✅ *All systems operating normally*\" \n          : \"⚠️ *Action required - Review detailed report*\"\n      }\n    }\n  ]\n} }}",
+        "options": {}
+      },
+      "id": "send-slack-notification",
+      "name": "Send Slack Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1450, 250]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "system_metrics",
+        "columns": "metric_name, metric_value, category, metadata, timestamp",
+        "additionalFields": {}
+      },
+      "id": "log-maintenance-metrics",
+      "name": "Log Maintenance Metrics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1450, 350],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Cron - Nightly at 2 AM": {
+      "main": [
+        [
+          {
+            "node": "Find Duplicate Knowledge Entries",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Calculate Success Rates",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Find Stale Knowledge Entries",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Detect Recurring Issues",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Duplicate Knowledge Entries": {
+      "main": [
+        [
+          {
+            "node": "Duplicates Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Success Rates": {
+      "main": [
+        [
+          {
+            "node": "Low Performers Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find Stale Knowledge Entries": {
+      "main": [
+        [
+          {
+            "node": "Stale Entries Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Detect Recurring Issues": {
+      "main": [
+        [
+          {
+            "node": "Recurring Issues Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Duplicates Found?": {
+      "main": [
+        [
+          {
+            "node": "Generate Duplicate Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Duplicate Report": {
+      "main": [
+        [
+          {
+            "node": "Merge All Reports",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Low Performers Found?": {
+      "main": [
+        [
+          {
+            "node": "Generate Performance Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Performance Report": {
+      "main": [
+        [
+          {
+            "node": "Merge All Reports",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Stale Entries Found?": {
+      "main": [
+        [
+          {
+            "node": "Generate Stale Entries Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Stale Entries Report": {
+      "main": [
+        [
+          {
+            "node": "Merge All Reports",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Recurring Issues Found?": {
+      "main": [
+        [
+          {
+            "node": "Generate Recurring Issues Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Recurring Issues Report": {
+      "main": [
+        [
+          {
+            "node": "Merge All Reports",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Merge All Reports": {
+      "main": [
+        [
+          {
+            "node": "Compile Comprehensive Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Compile Comprehensive Report": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Notification",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Maintenance Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "timezone": "Australia/Sydney"
+  },
+  "versionId": "1.0.0",
+  "id": "scheduled-maintenance",
+  "meta": {
+    "instanceId": "nsw-strata-automation"
+  },
+  "tags": [
+    {
+      "name": "production",
+      "id": "prod"
+    },
+    {
+      "name": "maintenance",
+      "id": "maintenance"
+    },
+    {
+      "name": "scheduled",
+      "id": "scheduled"
+    }
+  ]
+}

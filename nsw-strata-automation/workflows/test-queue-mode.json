@@ -1,0 +1,251 @@
+{
+  "name": "Queue Mode Test - Ticket Processor",
+  "active": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "test-queue",
+        "responseMode": "onReceived",
+        "options": {
+          "responseData": "firstEntryJson",
+          "responseCode": 202,
+          "responseBody": "{\n  \"status\": \"accepted\",\n  \"message\": \"Request received and queued for processing\",\n  \"timestamp\": \"{{$now.toISO()}}\",\n  \"ticket_id\": \"{{$json.ticket_id}}\"\n}"
+        }
+      },
+      "id": "webhook-receiver",
+      "name": "Webhook: Receive Test Request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "test-queue-webhook"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "ticket_id",
+              "value": "={{$json.body.ticket_id || 'TEST-' + Math.floor(Math.random() * 10000)}}"
+            },
+            {
+              "name": "subject",
+              "value": "={{$json.body.subject || 'Test Ticket'}}"
+            },
+            {
+              "name": "priority",
+              "value": "={{$json.body.priority || 'Medium'}}"
+            },
+            {
+              "name": "received_at",
+              "value": "={{$now.toISO()}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "extract-data",
+      "name": "Extract Request Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Simulate ticket processing work\n// This delay helps us see the job in the queue\n\nconst ticketId = $input.item.json.ticket_id;\nconst subject = $input.item.json.subject;\nconst priority = $input.item.json.priority;\n\nconsole.log(`[WORKER] Processing ticket: ${ticketId}`);\nconsole.log(`[WORKER] Subject: ${subject}`);\nconsole.log(`[WORKER] Priority: ${priority}`);\n\n// Simulate processing time (3 seconds)\nawait new Promise(resolve => setTimeout(resolve, 3000));\n\nconsole.log(`[WORKER] Ticket ${ticketId} processing complete`);\n\nreturn {\n  ticket_id: ticketId,\n  subject: subject,\n  priority: priority,\n  processing_duration: '3 seconds',\n  processed_at: new Date().toISOString()\n};"
+      },
+      "id": "simulate-processing",
+      "name": "Simulate Ticket Processing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Capture worker information\n// This shows which worker processed this job\n\nconst workerInfo = {\n  ...($input.item.json),\n  worker_hostname: process.env.HOSTNAME || 'unknown',\n  worker_pid: process.pid,\n  execution_id: $execution.id,\n  workflow_id: $workflow.id,\n  execution_mode: $execution.mode,\n  completed_at: new Date().toISOString()\n};\n\nconsole.log('=================================');\nconsole.log('EXECUTION COMPLETE');\nconsole.log('=================================');\nconsole.log('Ticket ID:', workerInfo.ticket_id);\nconsole.log('Worker:', workerInfo.worker_hostname);\nconsole.log('Process ID:', workerInfo.worker_pid);\nconsole.log('Execution ID:', workerInfo.execution_id);\nconsole.log('Execution Mode:', workerInfo.execution_mode);\nconsole.log('=================================');\n\nreturn workerInfo;"
+      },
+      "id": "capture-worker-info",
+      "name": "Capture Worker Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.priority}}",
+              "operation": "equals",
+              "value2": "High"
+            }
+          ]
+        }
+      },
+      "id": "check-priority",
+      "name": "Check Priority",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "result",
+              "value": "High Priority - Escalated"
+            },
+            {
+              "name": "action_taken",
+              "value": "Escalated to senior team"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "high-priority-action",
+      "name": "High Priority Action",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "result",
+              "value": "Normal Priority - Processed"
+            },
+            {
+              "name": "action_taken",
+              "value": "Added to regular queue"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "normal-priority-action",
+      "name": "Normal Priority Action",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [1340, 400]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combineBy": "combineAll"
+      },
+      "id": "merge-results",
+      "name": "Merge Results",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1560, 300]
+    }
+  ],
+  "connections": {
+    "Webhook: Receive Test Request": {
+      "main": [
+        [
+          {
+            "node": "Extract Request Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Request Data": {
+      "main": [
+        [
+          {
+            "node": "Simulate Ticket Processing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Simulate Ticket Processing": {
+      "main": [
+        [
+          {
+            "node": "Capture Worker Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Capture Worker Info": {
+      "main": [
+        [
+          {
+            "node": "Check Priority",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Priority": {
+      "main": [
+        [
+          {
+            "node": "High Priority Action",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Normal Priority Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "High Priority Action": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normal Priority Action": {
+      "main": [
+        [
+          {
+            "node": "Merge Results",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "test",
+      "id": "test-tag"
+    },
+    {
+      "name": "queue-mode",
+      "id": "queue-tag"
+    }
+  ],
+  "triggerCount": 0,
+  "updatedAt": "2025-10-15T00:00:00.000Z",
+  "versionId": "1"
+}
