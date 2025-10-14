@@ -1,0 +1,402 @@
+## Relevant Files
+
+- `nsw-strata-automation/docker-compose.yml` - Docker Compose configuration for local n8n development environment with Redis
+- `nsw-strata-automation/docker-compose.queue.yml` - Queue mode configuration with multiple workers for production-style testing
+- `nsw-strata-automation/.env.example` - General environment variables template
+- `nsw-strata-automation/.env.development` - Development environment configuration with debug settings
+- `nsw-strata-automation/.env.staging` - Staging environment configuration for 20% sampled ticket validation
+- `nsw-strata-automation/.env.production` - Production environment configuration for n8n Cloud deployment
+- `nsw-strata-automation/.gitignore` - Git ignore rules for sensitive data and Docker volumes
+- `nsw-strata-automation/README.md` - Project documentation with environment configuration guide and n8n CLI tools instructions
+- `nsw-strata-automation/backup-workflows.sh` - Automated script for backing up n8n workflows with version control integration
+- `nsw-strata-automation/scale-workers.sh` - Helper script for managing n8n worker scaling operations with presets
+- `nsw-strata-automation/config/redis-config.md` - Comprehensive Redis configuration and usage documentation
+- `nsw-strata-automation/config/worker-scaling.md` - Complete guide for configuring and scaling n8n workers for 200+ concurrent tickets
+- `nsw-strata-automation/config/webhook-infrastructure.md` - Complete guide for webhook receiver infrastructure with instant acknowledgment and async processing
+- `nsw-strata-automation/config/environments.md` - Complete environment configuration guide with deployment procedures
+- `nsw-strata-automation/CONTRIBUTING.md` - Git workflow, branching strategy, and contribution guidelines
+- `nsw-strata-automation/workflows/README.md` - Workflow documentation with export/import procedures
+- `nsw-strata-automation/database/README.md` - Database schema and migration documentation
+- `nsw-strata-automation/knowledge/README.md` - Knowledge base structure and entry management guide
+- `workflows/main-ticket-processor.json` - Main n8n workflow for processing new Freshdesk tickets
+- `workflows/reply-handler.json` - Workflow for handling customer replies and multi-turn conversations
+- `workflows/scheduled-maintenance.json` - Scheduled workflow for knowledge base maintenance
+- `workflows/manual-trigger.json` - Manual trigger workflow for on-demand processing
+- `workflows/batch-processor.json` - Batch processing workflow for bulk knowledge updates
+- `workflows/error-handler.json` - Error handling and recovery workflow
+- `credentials/freshdesk-api.json` - Freshdesk API credentials configuration
+- `credentials/supabase.json` - Supabase database credentials
+- `credentials/claude-api.json` - Claude AI API credentials
+- `credentials/perplexity-api.json` - Perplexity API credentials
+- `credentials/openai-api.json` - OpenAI API credentials for embeddings
+- `credentials/slack-webhook.json` - Slack webhook for notifications
+- `database/schema.sql` - PostgreSQL database schema for Supabase
+- `database/migrations/` - Database migration scripts
+- `knowledge/` - Knowledge base content organized by category
+- `config/environment.json` - Environment configuration and variables
+- `monitoring/prometheus-config.yml` - Prometheus monitoring configuration
+- `tests/workflow-tests/` - n8n workflow test configurations
+- `docs/deployment-guide.md` - Production deployment documentation
+- `docs/api-documentation.md` - API integration documentation
+
+### Notes
+
+- n8n workflows are stored as JSON files and can be imported/exported through the n8n UI
+- Credentials in n8n are encrypted and managed through the platform's credential system
+- Database migrations should be versioned and run sequentially
+- Knowledge base entries follow the template structure defined in the PRD
+- Monitoring configurations integrate with n8n's built-in metrics
+
+## Tasks
+
+- [ ] 1.0 Set up infrastructure and development environment
+  - [x] 1.1 Create n8n Cloud account and configure workspace for managed service
+  - [x] 1.2 Set up local Docker environment for n8n development and testing
+  - [x] 1.3 Configure Redis instance for message brokering and queue management
+  - [x] 1.4 Set up environment variables for EXECUTIONS_MODE=queue
+  - [x] 1.5 Configure QUEUE_BULL_REDIS_HOST for Redis connection
+  - [x] 1.6 Create development, staging, and production environment configurations
+  - [x] 1.7 Set up Git repository structure for workflow versioning
+  - [x] 1.8 Install n8n CLI tools for workflow export/import operations
+  - [x] 1.9 Configure n8n worker processes for horizontal scaling (200+ concurrent tickets)
+  - [x] 1.10 Set up webhook receiver infrastructure for instant acknowledgment with async processing
+
+- [ ] 2.0 Configure database and knowledge base systems
+  - [ ] 2.1 Create Supabase project with Pro Plan ($25/month) subscription
+  - [ ] 2.2 Enable pgvector extension in Supabase dashboard for vector operations
+  - [ ] 2.3 Create knowledge_base table with schema: id, content, title, embedding (vector(1536)), metadata (jsonb), search_keywords (text[])
+  - [ ] 2.4 Create training_examples table: id, ticket_text, response_text, category, embedding, customer_satisfaction
+  - [ ] 2.5 Create conversation_state table: ticket_id, conversation_history, current_knowledge_id, confidence_level
+  - [ ] 2.6 Create system_metrics table: metric_name, value, timestamp, category
+  - [ ] 2.7 Configure HNSW index with m=16 and ef_construction=64 for optimal vector search
+  - [ ] 2.8 Enable pg_trgm extension for BM25 keyword matching
+  - [ ] 2.9 Create GIN indexes on JSONB metadata fields for fast filtering
+  - [ ] 2.10 Create B-tree indexes on frequently filtered fields (category, property_id)
+  - [ ] 2.11 Set PostgreSQL work_mem to 256MB for query performance
+  - [ ] 2.12 Initialize knowledge base with NSW strata regulations and common issues
+  - [ ] 2.13 Create GitHub repository structure: /knowledge/{category}/{subcategory}/{entry-id}.md
+  - [ ] 2.14 Implement GitHub Actions workflow for automated knowledge versioning on commit
+  - [ ] 2.15 Set up database backup strategy with daily snapshots and 30-day retention
+
+- [ ] 3.0 Implement core webhook and ticket ingestion workflows
+  - [ ] 3.1 Create main-ticket-processor.json workflow for new Freshdesk tickets
+  - [ ] 3.2 Create reply-handler.json workflow for customer responses and multi-turn conversations
+  - [ ] 3.3 Create scheduled-maintenance.json workflow for automated operations
+  - [ ] 3.4 Create manual-trigger.json workflow for on-demand processing with human review
+  - [ ] 3.5 Create batch-processor.json workflow for bulk knowledge base updates
+  - [ ] 3.6 Configure Freshdesk webhook automation for new ticket creation events
+  - [ ] 3.7 Configure webhook URL paths for each workflow type
+  - [ ] 3.8 Implement webhook node with POST method and Header Auth using shared secret
+  - [ ] 3.9 Set response mode to "Immediately" for fast acknowledgment (within 500ms)
+  - [ ] 3.10 Create ticket enrichment node using Freshdesk "Get Ticket" operation
+  - [ ] 3.11 Implement text normalization: remove HTML, extract entities, concatenate subject+description
+  - [ ] 3.12 Create regex patterns for NSW strata entities (property addresses, lot numbers, keywords)
+  - [ ] 3.13 Implement ticket metadata extraction (priority, custom fields, requester email)
+  - [ ] 3.14 Configure webhook signature verification using HMAC-SHA256
+  - [ ] 3.15 Implement JSON schema validation and rate limiting for security
+
+- [ ] 4.0 Build knowledge retrieval and similarity search system
+  - [ ] 4.1 Configure OpenAI API integration for text-embedding-3-small model
+  - [ ] 4.2 Implement embedding generation node with 1536-dimensional vectors
+  - [ ] 4.3 Create batch embedding processor for 50-100 documents (50% cost savings)
+  - [ ] 4.4 Implement vector similarity search query using pgvector <-> operator
+  - [ ] 4.5 Create keyword search query using pg_trgm similarity function
+  - [ ] 4.6 Implement Reciprocal Rank Fusion: combined_score = sum(1/(60 + vector_rank)) + sum(1/(60 + keyword_rank))
+  - [ ] 4.7 Create metadata filtering for category, property_id, date range, success_rate >80%
+  - [ ] 4.8 Implement top-5 knowledge entry selection from fusion results
+  - [ ] 4.9 Create Merge node combining ticket data with retrieved knowledge
+  - [ ] 4.10 Calculate and include retrieval confidence scores (highest similarity)
+  - [ ] 4.11 Implement Redis caching layer with 1-hour TTL for frequent queries
+  - [ ] 4.12 Create connection pooling configuration with pgBouncer
+  - [ ] 4.13 Target <200ms query latency optimization
+  - [ ] 4.14 Implement lazy loading for knowledge content (summaries in metadata)
+  - [ ] 4.15 Create fallback to keyword-only search if vector search fails
+
+- [ ] 5.0 Implement decision engine with 5 routing paths
+  - [ ] 5.1 Create Switch node for decision routing with expression mode
+  - [ ] 5.2 Implement Path 1: Auto-Respond (similarity >0.85 AND training_samples >100 AND !requires_human_review)
+  - [ ] 5.3 Implement Path 2: Auto-Refine (similarity 0.75-0.85 AND training_samples >100)
+  - [ ] 5.4 Implement Path 3: Generate Draft (similarity 0.50-0.75 AND training_samples >30)
+  - [ ] 5.5 Implement Path 4: Deep Research (similarity <0.50)
+  - [ ] 5.6 Implement Path 5: Immediate Escalation (priority='Critical' OR complexity >4)
+  - [ ] 5.7 Create path counter tracking using UPDATE system_stats queries
+  - [ ] 5.8 Implement lightweight updates for Path 1 (dates, property details, personalization)
+  - [ ] 5.9 Configure Claude quality check: "Return 'APPROVED' or provide specific corrections"
+  - [ ] 5.10 Create Freshdesk reply posting via POST /api/v2/tickets/{id}/reply
+  - [ ] 5.11 Implement ticket status updates (status=4 for Resolved)
+  - [ ] 5.12 Configure tag appending: "auto-resolved", "kb-reused", "ai-draft-review"
+  - [ ] 5.13 Create routing statistics dashboard for monthly analysis
+  - [ ] 5.14 Implement dynamic threshold tuning based on success rates
+  - [ ] 5.15 Create override mechanism for manual routing when needed
+
+- [ ] 6.0 Configure AI integrations and prompt engineering
+  - [ ] 6.1 Set up Claude API integration with claude-sonnet-4.5 model
+  - [ ] 6.2 Configure Claude prompt caching for 50K token system prompts (90% cost reduction)
+  - [ ] 6.3 Implement Claude self-refine methodology: generate → critique → improve (3 iterations)
+  - [ ] 6.4 Set up Perplexity API with sonar-deep-research model (5 RPM limit)
+  - [ ] 6.5 Configure Perplexity sonar-pro model for faster queries (50 RPM)
+  - [ ] 6.6 Implement Redis queue for Perplexity requests at 4.5 RPM maximum
+  - [ ] 6.7 Configure exponential backoff starting at 5 seconds for rate limits
+  - [ ] 6.8 Implement Retry-After header handling for all APIs
+  - [ ] 6.9 Create fallback hierarchy: Claude → GPT-4o → GPT-4o Mini
+  - [ ] 6.10 Configure GPT-4o Mini for classification after 50 samples ($0.15/1M tokens)
+  - [ ] 6.11 Design and test NSW strata-specific prompts with legal context
+  - [ ] 6.12 Create few-shot prompt templates using 5 similar examples
+  - [ ] 6.13 Implement prompt versioning and A/B testing framework
+  - [ ] 6.14 Configure max_tokens=2048 for response generation
+  - [ ] 6.15 Create prompt library for each of the 8 NSW strata categories
+
+- [ ] 7.0 Develop progressive learning system
+  - [ ] 7.1 Implement phase tracking: Manual (0-30), Assisted (30-100), Autonomous (100+)
+  - [ ] 7.2 Create sample counter and phase transition logic
+  - [ ] 7.3 Configure 30-sample milestone: Enable basic few-shot classification (40-50% accuracy)
+  - [ ] 7.4 Configure 50-sample milestone: Activate draft generation for similarity >0.60 (50% approval rate)
+  - [ ] 7.5 Configure 75-sample milestone: Achieve 70% classification accuracy with dynamic thresholds
+  - [ ] 7.6 Configure 100-sample milestone: Enter Autonomous Mode with 30-40% auto-response rate
+  - [ ] 7.7 Implement training example storage with validation status
+  - [ ] 7.8 Create few-shot learning retrieval for 5 most similar historical examples
+  - [ ] 7.9 Implement category-specific confidence threshold calculation
+  - [ ] 7.10 Create success rate tracking for each knowledge entry
+  - [ ] 7.11 Implement A/B testing with 20% experimental traffic allocation
+  - [ ] 7.12 Create reinforcement learning from feedback signals (satisfaction, resolution time)
+  - [ ] 7.13 Implement weight adjustment for training examples based on success
+  - [ ] 7.14 Create model fine-tuning pipeline after 500+ examples
+  - [ ] 7.15 Generate monthly optimization reports with threshold recommendations
+
+- [ ] 8.0 Implement NSW strata categorization and compliance
+  - [ ] 8.1 Create Switch node with 8 output branches for primary categories
+  - [ ] 8.2 Implement Maintenance & Repairs category with 5 subcategories (common property, systems, emergency, amenities, defects)
+  - [ ] 8.3 Implement By-Law Compliance with 7 subcategories (noise, parking, pets, smoking, rubbish, short-term letting, nuisance)
+  - [ ] 8.4 Implement Financial Matters with 4 subcategories (levies, disputes, statements, insurance)
+  - [ ] 8.5 Implement Governance & Administration with 5 subcategories (meetings, committees, by-laws, records, compliance)
+  - [ ] 8.6 Implement Renovations & Alterations with three-tier system (cosmetic, minor, major)
+  - [ ] 8.7 Implement Disputes & Complaints with 4 subcategories (neighbor, owners corporation, strata manager, NCAT)
+  - [ ] 8.8 Implement Security & Safety with 5 subcategories (access, CCTV, hazards, fire safety, window safety)
+  - [ ] 8.9 Implement Information Requests with 3 subcategories (general, onboarding, vendor)
+  - [ ] 8.10 Create priority assignment logic: Critical (same-day per SSMA Section 106), High (4-hour), Medium (1 day), Low (2 days)
+  - [ ] 8.11 Implement SSMA 2015 and SSDA 2015 reference system with section lookup
+  - [ ] 8.12 Configure all 18 model by-laws including vehicles, damage, noise, compliance procedures, and notice requirements
+  - [ ] 8.13 Implement 2025 reforms: capital works 10-year planning, disclosure obligations, accessibility approvals
+  - [ ] 8.14 Create keyword-based initial classification with Claude API fallback
+  - [ ] 8.15 Implement complexity scoring (1-5) and stakeholder type identification
+
+- [ ] 9.0 Build conversation management and multi-turn handling
+  - [ ] 9.1 Create Reply Workflow triggered by Ticket Update webhook
+  - [ ] 9.2 Configure webhook for condition: Reply is sent AND Performer = Requester
+  - [ ] 9.3 Implement Freshdesk API GET /api/v2/tickets/{id}/conversations for history fetch
+  - [ ] 9.4 Implement Freshdesk API POST /api/v2/tickets/{id}/reply for responses
+  - [ ] 9.5 Configure Freshdesk API PUT /api/v2/tickets/{id} for status updates
+  - [ ] 9.6 Implement Freshdesk API GET /api/v2/tickets/{id} for ticket details
+  - [ ] 9.7 Create conversation_state table management with context tracking
+  - [ ] 9.8 Implement sentiment analysis: improved (close ticket) vs declined (escalate)
+  - [ ] 9.9 Configure automatic ticket closure for positive sentiment (status=5)
+  - [ ] 9.10 Create confidence degradation logic with each unsuccessful turn
+  - [ ] 9.11 Implement automatic escalation after 3 unsuccessful resolution attempts
+  - [ ] 9.12 Create conversation summary generation for escalated tickets
+  - [ ] 9.13 Implement context re-evaluation with updated customer clarifications
+  - [ ] 9.14 Configure gentle reminder automation for stale conversations (>48 hours)
+  - [ ] 9.15 Create multi-turn success tracking for knowledge improvement
+
+- [ ] 10.0 Create scheduled operations and maintenance workflows
+  - [ ] 10.1 Configure Cron trigger for hourly stale ticket checks: 0 * * * *
+  - [ ] 10.2 Implement nightly maintenance workflow at 2 AM: 0 2 * * *
+  - [ ] 10.3 Create deduplication logic for entries with cosine distance <0.1
+  - [ ] 10.4 Implement hierarchical clustering for duplicate identification
+  - [ ] 10.5 Configure Claude-based duplicate merging with contradiction highlighting
+  - [ ] 10.6 Implement success rate calculation and <70% flagging
+  - [ ] 10.7 Create age-based review for entries >6 months without use
+  - [ ] 10.8 Implement weekly optimization report generation via Cron
+  - [ ] 10.9 Configure recurring issue detection (similarity >0.90 in past 7 days)
+  - [ ] 10.10 Create proactive notification system for emerging problems
+  - [ ] 10.11 Implement knowledge base archival with full history retention
+  - [ ] 10.12 Create batch processing for regulatory update propagation
+  - [ ] 10.13 Configure auto-generation of knowledge from resolved tickets
+  - [ ] 10.14 Implement human approval queue for generated entries
+  - [ ] 10.15 Create GitHub Actions workflow for knowledge versioning
+
+- [ ] 11.0 Implement comprehensive error handling and recovery
+  - [ ] 11.1 Configure node-level retry with 3 attempts and 5-second delays
+  - [ ] 11.2 Create workflow-level error trigger with full context capture
+  - [ ] 11.3 Implement system-level fallbacks for graceful degradation
+  - [ ] 11.4 Create error logging database with ticket ID, error type, and payload
+  - [ ] 11.5 Configure Slack webhook for critical failure notifications within 1 minute
+  - [ ] 11.6 Implement Redis queue for failed operations with 7-day TTL
+  - [ ] 11.7 Create error classification system (transient, systematic, critical)
+  - [ ] 11.8 Implement circuit breaker pattern for failing services
+  - [ ] 11.9 Configure fallback to keyword search when vector search fails
+  - [ ] 11.10 Create fallback to GPT-4o when Claude API fails
+  - [ ] 11.11 Implement webhook retry queue when Freshdesk is unavailable
+  - [ ] 11.12 Create manual intervention workflow for unrecoverable errors
+  - [ ] 11.13 Implement error recovery dashboard with statistics
+  - [ ] 11.14 Configure automated error pattern detection
+  - [ ] 11.15 Create runbook procedures for common error scenarios
+
+- [ ] 12.0 Set up monitoring, alerting, and reporting systems
+  - [ ] 12.1 Configure Prometheus metrics collection for n8n workflows
+  - [ ] 12.2 Implement workflow execution duration tracking (p50, p95, p99)
+  - [ ] 12.3 Create queue depth monitoring for Redis
+  - [ ] 12.4 Configure worker utilization metrics
+  - [ ] 12.5 Implement API rate limit consumption tracking
+  - [ ] 12.6 Create business metrics dashboard for tickets processed per hour/day
+  - [ ] 12.7 Track automation rate by category with trending
+  - [ ] 12.8 Monitor average similarity scores over time
+  - [ ] 12.9 Implement CSAT score tracking from Freshdesk surveys
+  - [ ] 12.10 Track resolution time by category and automation level
+  - [ ] 12.11 Monitor API costs per ticket ($0.50-2.00 target)
+  - [ ] 12.12 Configure SLA breach alerting (15 minutes for critical)
+  - [ ] 12.13 Set up error rate alerting threshold at >5%
+  - [ ] 12.14 Implement queue depth alerting at >100 pending
+  - [ ] 12.15 Create monthly performance reports with AI-generated recommendations
+
+- [ ] 13.0 Configure security and data protection measures
+  - [ ] 13.1 Configure HTTPS with valid SSL certificates (Let's Encrypt or commercial)
+  - [ ] 13.2 Implement webhook signature verification using HMAC-SHA256
+  - [ ] 13.3 Create JSON schema validation for all inputs
+  - [ ] 13.4 Implement input sanitization to prevent injection attacks
+  - [ ] 13.5 Configure PII masking in all log outputs
+  - [ ] 13.6 Implement 7-year data retention policy per Australian requirements
+  - [ ] 13.7 Set up n8n authentication with strong passwords
+  - [ ] 13.8 Configure SSO via SAML/OIDC for enterprise deployment
+  - [ ] 13.9 Implement network access restrictions (VPN/IP whitelist)
+  - [ ] 13.10 Create row-level security policies in Supabase
+  - [ ] 13.11 Implement audit logging for all knowledge base modifications
+  - [ ] 13.12 Configure n8n audit logs for workflow changes
+  - [ ] 13.13 Create data encryption at rest configuration
+  - [ ] 13.14 Implement consent tracking for AI processing
+  - [ ] 13.15 Create security incident response procedures
+
+- [ ] 14.0 Perform testing and quality assurance
+  - [ ] 14.1 Create unit tests for each workflow node configuration
+  - [ ] 14.2 Implement integration tests for Freshdesk webhook handling
+  - [ ] 14.3 Test Supabase vector search performance with 10K+ entries
+  - [ ] 14.4 Validate similarity threshold accuracy with test datasets
+  - [ ] 14.5 Test all 5 routing paths with representative tickets
+  - [ ] 14.6 Validate AI API fallback mechanisms
+  - [ ] 14.7 Test progressive learning phase transitions
+  - [ ] 14.8 Validate NSW strata categorization accuracy (85% target)
+  - [ ] 14.9 Test multi-turn conversation handling
+  - [ ] 14.10 Validate scheduled operations and Cron triggers
+  - [ ] 14.11 Perform load testing for 200+ concurrent tickets
+  - [ ] 14.12 Test error recovery and retry mechanisms
+  - [ ] 14.13 Validate monitoring metrics and alerting
+  - [ ] 14.14 Perform security penetration testing
+  - [ ] 14.15 Conduct user acceptance testing with strata managers
+
+- [ ] 15.0 Deploy to production and establish operational procedures
+  - [ ] 15.1 Complete local development testing with Docker n8n
+  - [ ] 15.2 Deploy to development environment with test Freshdesk
+  - [ ] 15.3 Configure staging environment with 20% sampled tickets
+  - [ ] 15.4 Perform staging validation for 2 weeks
+  - [ ] 15.5 Configure production n8n Cloud with queue mode
+  - [ ] 15.6 Migrate workflows using n8n CLI: n8n export:workflow --all --output=./backups
+  - [ ] 15.7 Configure production credentials and environment variables
+  - [ ] 15.8 Initialize production database with knowledge base
+  - [ ] 15.9 Configure production monitoring and alerting
+  - [ ] 15.10 Implement blue-green deployment with load balancer switching
+  - [ ] 15.11 Create operational runbooks for common tasks
+  - [ ] 15.12 Establish 24/7 on-call rotation schedule
+  - [ ] 15.13 Configure automated daily backups: workflows to GitHub, database with 30-day retention, embeddings backup
+  - [ ] 15.14 Document disaster recovery: RTO <4 hours, RPO <1 hour, failover to manual processing, quarterly DR drills
+  - [ ] 15.15 Conduct production launch with phased rollout (10%, 50%, 100%)
+
+- [ ] 16.0 Implement knowledge entry template structure
+  - [ ] 16.1 Create template for Title field (concise, searchable)
+  - [ ] 16.2 Create template for Issue Description field (what owners/tenants report)
+  - [ ] 16.3 Create template for NSW Legal Context field with legislation references
+  - [ ] 16.4 Create template for Solution Steps field with numbered procedures
+  - [ ] 16.5 Create template for Prevention Advice field
+  - [ ] 16.6 Create template for Estimated Resolution Time field with historical data integration
+  - [ ] 16.7 Create template for Stakeholder Responsibilities matrix
+  - [ ] 16.8 Create template for Required Documentation field with forms/certificates
+  - [ ] 16.9 Create template for Success Rate field with automatic calculation
+  - [ ] 16.10 Create template for Last Updated Date with version tracking
+  - [ ] 16.11 Implement YAML frontmatter structure for GitHub storage
+  - [ ] 16.12 Create validation schema for knowledge entry completeness
+  - [ ] 16.13 Build knowledge entry editor interface in n8n
+  - [ ] 16.14 Implement knowledge entry approval workflow
+  - [ ] 16.15 Create knowledge entry import/export functionality
+
+- [ ] 17.0 Develop NSW-specific prompt library and templates
+  - [ ] 17.1 Create prompt template for Maintenance & Repairs category
+  - [ ] 17.2 Create prompt template for By-Law Compliance category
+  - [ ] 17.3 Create prompt template for Financial Matters category
+  - [ ] 17.4 Create prompt template for Governance & Administration category
+  - [ ] 17.5 Create prompt template for Renovations & Alterations category
+  - [ ] 17.6 Create prompt template for Disputes & Complaints category
+  - [ ] 17.7 Create prompt template for Security & Safety category
+  - [ ] 17.8 Create prompt template for Information Requests category
+  - [ ] 17.9 Implement system prompt with NSW legislation context (50K tokens)
+  - [ ] 17.10 Create few-shot example bank for each category (5 examples each)
+  - [ ] 17.11 Develop prompt variations for different priority levels
+  - [ ] 17.12 Create specialized prompts for 18 model by-laws references
+  - [ ] 17.13 Implement prompt templates for 2025 reform requirements
+  - [ ] 17.14 Create empathy and tone guidelines for customer responses
+  - [ ] 17.15 Build prompt testing and optimization framework
+
+- [ ] 18.0 Create test data and validation datasets
+  - [ ] 18.1 Generate 50 test tickets for Maintenance & Repairs scenarios
+  - [ ] 18.2 Generate 50 test tickets for By-Law Compliance scenarios
+  - [ ] 18.3 Generate 50 test tickets for Financial Matters scenarios
+  - [ ] 18.4 Generate 50 test tickets for Governance & Administration scenarios
+  - [ ] 18.5 Generate 50 test tickets for Renovations & Alterations scenarios
+  - [ ] 18.6 Generate 50 test tickets for Disputes & Complaints scenarios
+  - [ ] 18.7 Generate 50 test tickets for Security & Safety scenarios
+  - [ ] 18.8 Generate 50 test tickets for Information Requests scenarios
+  - [ ] 18.9 Create edge case test dataset (unusual scenarios)
+  - [ ] 18.10 Build multi-turn conversation test scenarios
+  - [ ] 18.11 Develop similarity threshold validation dataset
+  - [ ] 18.12 Create performance benchmark dataset (200+ concurrent tickets)
+  - [ ] 18.13 Generate PII test data for masking validation
+  - [ ] 18.14 Build regulatory compliance test scenarios
+  - [ ] 18.15 Create expected output validation for each test case
+
+- [ ] 19.0 Develop operational documentation and guides
+  - [ ] 19.1 Write n8n workflow deployment guide
+  - [ ] 19.2 Create Freshdesk integration setup documentation
+  - [ ] 19.3 Document Supabase database configuration procedures
+  - [ ] 19.4 Write API credentials management guide
+  - [ ] 19.5 Create knowledge base management manual
+  - [ ] 19.6 Document monitoring and alerting setup
+  - [ ] 19.7 Write troubleshooting guide for common issues
+  - [ ] 19.8 Create performance tuning documentation
+  - [ ] 19.9 Document backup and recovery procedures
+  - [ ] 19.10 Write security best practices guide
+  - [ ] 19.11 Create workflow modification procedures
+  - [ ] 19.12 Document threshold tuning guidelines
+  - [ ] 19.13 Write incident response playbook
+  - [ ] 19.14 Create monthly reporting procedures
+  - [ ] 19.15 Document regulatory compliance updates process
+
+- [ ] 20.0 Create training and onboarding materials
+  - [ ] 20.1 Develop strata manager training curriculum
+  - [ ] 20.2 Create video tutorials for workflow overview
+  - [ ] 20.3 Build interactive training environment with sample tickets
+  - [ ] 20.4 Write user guide for reviewing AI-generated responses
+  - [ ] 20.5 Create decision tree for escalation procedures
+  - [ ] 20.6 Develop knowledge base contribution guide
+  - [ ] 20.7 Build training on NSW strata legislation basics
+  - [ ] 20.8 Create category-specific handling guidelines
+  - [ ] 20.9 Write guide for interpreting confidence scores
+  - [ ] 20.10 Develop training on multi-turn conversation management
+  - [ ] 20.11 Create dashboard interpretation guide
+  - [ ] 20.12 Build troubleshooting skills training
+  - [ ] 20.13 Write feedback and improvement process guide
+  - [ ] 20.14 Create certification program for strata managers
+  - [ ] 20.15 Develop ongoing education and updates program
+
+- [ ] 21.0 Implement cost optimization and monitoring
+  - [ ] 21.1 Set up API usage tracking for OpenAI, Claude, and Perplexity
+  - [ ] 21.2 Implement cost calculator for per-ticket API expenses
+  - [ ] 21.3 Create monthly cost analysis dashboard
+  - [ ] 21.4 Configure alerts for cost overruns (>$2.00 per ticket)
+  - [ ] 21.5 Implement token usage optimization strategies
+  - [ ] 21.6 Set up prompt caching monitoring (90% reduction target)
+  - [ ] 21.7 Track embedding batch efficiency (50% cost reduction target)
+  - [ ] 21.8 Monitor GPT-4o Mini usage after 50 samples transition
+  - [ ] 21.9 Implement cache hit rate tracking for Redis
+  - [ ] 21.10 Create cost allocation by category and priority
+  - [ ] 21.11 Set up budget alerts at 50%, 75%, and 90% thresholds
+  - [ ] 21.12 Implement automatic model downgrade on budget limits
+  - [ ] 21.13 Track ROI metrics (cost savings vs manual processing)
+  - [ ] 21.14 Create monthly cost optimization recommendations
+  - [ ] 21.15 Plan for model fine-tuning at 500+ samples (3× cost reduction)

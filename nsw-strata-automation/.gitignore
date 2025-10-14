@@ -1,0 +1,56 @@
+# Environment files with secrets (NEVER commit these)
+.env
+.env.local
+.env.*.local
+
+# Note: Template files are tracked:
+# - .env.example (general template)
+# - .env.development (dev template with weak credentials - safe to commit)
+# - .env.staging (staging template with variable placeholders - safe to commit)
+# - .env.production (production template with variable placeholders - safe to commit)
+
+# n8n data
+.n8n/
+credentials/*.json
+!credentials/.gitkeep
+
+# Docker volumes
+postgres_data/
+n8n_data/
+
+# Logs
+*.log
+logs/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Backup files
+*.backup
+*.bak
+
+# Database dumps
+*.sql
+*.dump
+
+# API keys and secrets
+secrets/
+*.key
+*.pem
+
+# Test data
+test-data/*.json
+!test-data/sample-*.json

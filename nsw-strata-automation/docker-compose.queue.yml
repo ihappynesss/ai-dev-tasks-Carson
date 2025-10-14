@@ -1,0 +1,101 @@
+version: '3.8'
+
+# Production-style Queue Mode Configuration
+# This extends docker-compose.yml with queue mode enabled
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.queue.yml up -d
+
+services:
+  # n8n main instance - webhook receiver
+  n8n:
+    environment:
+      # Enable queue mode
+      - EXECUTIONS_MODE=queue
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_DB=0
+      - QUEUE_BULL_REDIS_PASSWORD=
+
+      # Queue configuration
+      - QUEUE_HEALTH_CHECK_ACTIVE=true
+      - QUEUE_RECOVERY_INTERVAL=60
+
+      # Process settings
+      - EXECUTIONS_PROCESS=main
+
+  # n8n worker instance 1
+  n8n-worker-1:
+    image: n8nio/n8n:latest
+    container_name: n8n-worker-1
+    restart: unless-stopped
+    environment:
+      # Database configuration (same as main)
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=n8n
+      - DB_POSTGRESDB_PASSWORD=n8n_password
+
+      # Worker mode configuration
+      - EXECUTIONS_MODE=queue
+      - EXECUTIONS_PROCESS=worker
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_DB=0
+      - QUEUE_BULL_REDIS_PASSWORD=
+
+      # Timezone
+      - GENERIC_TIMEZONE=Australia/Sydney
+
+      # Logging
+      - N8N_LOG_LEVEL=info
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/home/node/.n8n/workflows
+      - ./credentials:/home/node/.n8n/credentials
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - n8n-network
+
+  # n8n worker instance 2
+  n8n-worker-2:
+    image: n8nio/n8n:latest
+    container_name: n8n-worker-2
+    restart: unless-stopped
+    environment:
+      # Database configuration (same as main)
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=n8n
+      - DB_POSTGRESDB_PASSWORD=n8n_password
+
+      # Worker mode configuration
+      - EXECUTIONS_MODE=queue
+      - EXECUTIONS_PROCESS=worker
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_DB=0
+      - QUEUE_BULL_REDIS_PASSWORD=
+
+      # Timezone
+      - GENERIC_TIMEZONE=Australia/Sydney
+
+      # Logging
+      - N8N_LOG_LEVEL=info
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/home/node/.n8n/workflows
+      - ./credentials:/home/node/.n8n/credentials
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - n8n-network

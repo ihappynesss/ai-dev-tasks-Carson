@@ -1,0 +1,105 @@
+version: '3.8'
+
+services:
+  # PostgreSQL database for n8n workflow persistence
+  postgres:
+    image: postgres:15
+    container_name: n8n-postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=n8n
+      - POSTGRES_PASSWORD=n8n_password
+      - POSTGRES_DB=n8n
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U n8n']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - n8n-network
+
+  # Redis for queue management and caching
+  redis:
+    image: redis:7-alpine
+    container_name: n8n-redis
+    restart: unless-stopped
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru --appendonly yes
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - n8n-network
+
+  # n8n workflow automation
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n-local
+    restart: unless-stopped
+    ports:
+      - '5678:5678'
+    environment:
+      # Database configuration
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=n8n
+      - DB_POSTGRESDB_PASSWORD=n8n_password
+
+      # n8n configuration
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=admin123
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+
+      # Execution configuration
+      - EXECUTIONS_MODE=regular
+      - EXECUTIONS_PROCESS=main
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+
+      # Generic timezone
+      - GENERIC_TIMEZONE=Australia/Sydney
+
+      # Logging
+      - N8N_LOG_LEVEL=info
+      - N8N_LOG_OUTPUT=console,file
+
+    volumes:
+      # Workflow data persistence
+      - n8n_data:/home/node/.n8n
+      # Mount local workflows directory for development
+      - ./workflows:/home/node/.n8n/workflows
+      # Mount local credentials directory
+      - ./credentials:/home/node/.n8n/credentials
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - n8n-network
+
+volumes:
+  postgres_data:
+    driver: local
+  n8n_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  n8n-network:
+    driver: bridge
