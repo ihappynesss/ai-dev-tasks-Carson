@@ -46,7 +46,22 @@
 - `database/migrations/` - Database migration scripts
 - `knowledge/` - Knowledge base content organized by category
 - `config/environment.json` - Environment configuration and variables
-- `monitoring/prometheus-config.yml` - Prometheus monitoring configuration
+- `monitoring/prometheus-config.yml` - Prometheus monitoring configuration with scrape targets for n8n, Redis, and PostgreSQL (Task 12.1)
+- `monitoring/README.md` - Comprehensive monitoring stack documentation with setup guide, metrics reference, and troubleshooting (Task 12.1)
+- `monitoring/grafana/datasources/prometheus.yml` - Grafana datasource provisioning for Prometheus
+- `monitoring/grafana/dashboards/dashboard-provisioning.yml` - Grafana dashboard provisioning configuration
+- `monitoring/grafana/dashboards/n8n-workflow-performance.json` - Workflow execution duration tracking dashboard with p50, p95, p99 percentiles (Task 12.2)
+- `monitoring/grafana/dashboards/redis-queue-monitoring.json` - Redis queue depth monitoring dashboard (Task 12.3)
+- `monitoring/grafana/dashboards/n8n-worker-utilization.json` - Worker utilization metrics dashboard (Task 12.4)
+- `monitoring/grafana/dashboards/business-metrics.json` - Business metrics dashboard for tickets, automation, CSAT, costs (Tasks 12.6-12.11)
+- `monitoring/metrics-exporter/exporter.py` - Custom Prometheus metrics exporter for API rate limits, business metrics (Tasks 12.5-12.11)
+- `monitoring/metrics-exporter/Dockerfile` - Docker container configuration for metrics exporter
+- `monitoring/metrics-exporter/requirements.txt` - Python dependencies for metrics exporter
+- `monitoring/metrics-exporter/README.md` - Metrics exporter documentation and configuration guide
+- `monitoring/rules/n8n-alerts.yml` - Prometheus alert rules for workflow errors, SLA breaches, performance (Tasks 12.12, 12.13)
+- `monitoring/rules/redis-alerts.yml` - Prometheus alert rules for Redis queue depth and health (Task 12.14)
+- `monitoring/rules/business-metrics-alerts.yml` - Prometheus alert rules for costs, CSAT, automation rate
+- `workflows/monthly-performance-report.json` - Monthly performance report workflow with AI-generated recommendations (Task 12.15)
 - `tests/workflow-tests/` - n8n workflow test configurations
 - `docs/deployment-guide.md` - Production deployment documentation
 - `docs/api-documentation.md` - API integration documentation
@@ -243,22 +258,22 @@
   - [x] 11.14 Configure automated error pattern detection
   - [x] 11.15 Create runbook procedures for common error scenarios
 
-- [ ] 12.0 Set up monitoring, alerting, and reporting systems
-  - [ ] 12.1 Configure Prometheus metrics collection for n8n workflows
-  - [ ] 12.2 Implement workflow execution duration tracking (p50, p95, p99)
-  - [ ] 12.3 Create queue depth monitoring for Redis
-  - [ ] 12.4 Configure worker utilization metrics
-  - [ ] 12.5 Implement API rate limit consumption tracking
-  - [ ] 12.6 Create business metrics dashboard for tickets processed per hour/day
-  - [ ] 12.7 Track automation rate by category with trending
-  - [ ] 12.8 Monitor average similarity scores over time
-  - [ ] 12.9 Implement CSAT score tracking from Freshdesk surveys
-  - [ ] 12.10 Track resolution time by category and automation level
-  - [ ] 12.11 Monitor API costs per ticket ($0.50-2.00 target)
-  - [ ] 12.12 Configure SLA breach alerting (15 minutes for critical)
-  - [ ] 12.13 Set up error rate alerting threshold at >5%
-  - [ ] 12.14 Implement queue depth alerting at >100 pending
-  - [ ] 12.15 Create monthly performance reports with AI-generated recommendations
+- [x] 12.0 Set up monitoring, alerting, and reporting systems
+  - [x] 12.1 Configure Prometheus metrics collection for n8n workflows
+  - [x] 12.2 Implement workflow execution duration tracking (p50, p95, p99)
+  - [x] 12.3 Create queue depth monitoring for Redis
+  - [x] 12.4 Configure worker utilization metrics
+  - [x] 12.5 Implement API rate limit consumption tracking
+  - [x] 12.6 Create business metrics dashboard for tickets processed per hour/day
+  - [x] 12.7 Track automation rate by category with trending
+  - [x] 12.8 Monitor average similarity scores over time
+  - [x] 12.9 Implement CSAT score tracking from Freshdesk surveys
+  - [x] 12.10 Track resolution time by category and automation level
+  - [x] 12.11 Monitor API costs per ticket ($0.50-2.00 target)
+  - [x] 12.12 Configure SLA breach alerting (15 minutes for critical)
+  - [x] 12.13 Set up error rate alerting threshold at >5%
+  - [x] 12.14 Implement queue depth alerting at >100 pending
+  - [x] 12.15 Create monthly performance reports with AI-generated recommendations
 
 - [ ] 13.0 Configure security and data protection measures
   - [ ] 13.1 Configure HTTPS with valid SSL certificates (Let's Encrypt or commercial)

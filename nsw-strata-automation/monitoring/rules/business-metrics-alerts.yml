@@ -1,0 +1,205 @@
+# NSW Strata Automation - Business Metrics Alert Rules
+# SLA, Costs, CSAT, and Business KPI Alerts
+# Date: 2025-10-15
+
+groups:
+  - name: business_metrics_alerts
+    interval: 60s
+    rules:
+      # ==================================================
+      # Cost Alerts (Task 12.11)
+      # ==================================================
+      - alert: HighAPIcostPerTicket
+        expr: api_cost_per_ticket_usd > 2.00
+        for: 10m
+        labels:
+          severity: warning
+          component: cost
+          task: task-12.11
+        annotations:
+          summary: "High API cost per ticket"
+          description: "API cost for {{ $labels.category }} tickets is ${{ $value }} (threshold: $2.00)"
+          runbook: "https://docs.nsw-strata-automation.com/runbooks/high-api-costs"
+
+      - alert: APIBudgetExceeded
+        expr: sum(rate(api_cost_total_usd[1h])) * 24 * 30 > 5000
+        for: 1h
+        labels:
+          severity: critical
+          component: cost
+        annotations:
+          summary: "Monthly API budget projection exceeded"
+          description: "Projected monthly API cost is ${{ $value }} (budget: $5000)"
+
+      # ==================================================
+      # CSAT Alerts (Task 12.9)
+      # ==================================================
+      - alert: LowCSATScore
+        expr: csat_score < 3.0
+        for: 24h
+        labels:
+          severity: warning
+          component: quality
+          task: task-12.9
+        annotations:
+          summary: "Low CSAT score detected"
+          description: "CSAT for {{ $labels.category }} is {{ $value }}/5 (threshold: 3.0)"
+
+      - alert: CriticalCSATScore
+        expr: csat_score < 2.0
+        for: 12h
+        labels:
+          severity: critical
+          component: quality
+        annotations:
+          summary: "CRITICAL: Very low CSAT score"
+          description: "CSAT for {{ $labels.category }} is {{ $value }}/5. Quality review needed."
+
+      # ==================================================
+      # Automation Rate Alerts (Task 12.7)
+      # ==================================================
+      - alert: LowAutomationRate
+        expr: automation_rate < 0.20
+        for: 24h
+        labels:
+          severity: info
+          component: automation
+          task: task-12.7
+        annotations:
+          summary: "Low automation rate"
+          description: "Automation rate for {{ $labels.category }} is {{ $value | humanizePercentage }} (target: >30%)"
+
+      - alert: AutomationRateDecreasing
+        expr: |
+          (
+            automation_rate
+            -
+            automation_rate offset 24h
+          ) < -0.10
+        for: 6h
+        labels:
+          severity: warning
+          component: automation
+        annotations:
+          summary: "Automation rate decreasing"
+          description: "Automation rate for {{ $labels.category }} decreased by {{ $value | humanizePercentage }} in 24h"
+
+      # ==================================================
+      # Ticket Processing Alerts (Task 12.6)
+      # ==================================================
+      - alert: NoTicketsProcessed
+        expr: sum(tickets_processed_hourly) == 0
+        for: 2h
+        labels:
+          severity: warning
+          component: processing
+          task: task-12.6
+        annotations:
+          summary: "No tickets processed recently"
+          description: "No tickets have been processed in the last 2 hours. Check Freshdesk webhook."
+
+      - alert: HighTicketVolume
+        expr: sum(tickets_processed_hourly) > 200
+        for: 1h
+        labels:
+          severity: warning
+          component: processing
+        annotations:
+          summary: "High ticket volume"
+          description: "{{ $value }} tickets/hour (normal: <100). Consider scaling workers."
+
+      # ==================================================
+      # Resolution Time Alerts (Task 12.10)
+      # ==================================================
+      - alert: SlowResolutionTime
+        expr: resolution_time_avg_seconds > 86400
+        for: 12h
+        labels:
+          severity: warning
+          component: sla
+          task: task-12.10
+        annotations:
+          summary: "Slow average resolution time"
+          description: "Average resolution time for {{ $labels.category }} is {{ $value | humanizeDuration }} (threshold: 24h)"
+
+      - alert: CriticalTicketResolutionSlow
+        expr: |
+          resolution_time_avg_seconds{priority="critical"} > 3600
+        for: 1h
+        labels:
+          severity: critical
+          component: sla
+        annotations:
+          summary: "Critical tickets resolving too slowly"
+          description: "Critical tickets taking {{ $value | humanizeDuration }} on average (threshold: 1h)"
+
+      # ==================================================
+      # Similarity Score Alerts (Task 12.8)
+      # ==================================================
+      - alert: LowSimilarityScores
+        expr: similarity_score_avg < 0.50
+        for: 6h
+        labels:
+          severity: warning
+          component: quality
+          task: task-12.8
+        annotations:
+          summary: "Low average similarity scores"
+          description: "Similarity scores for {{ $labels.category }} averaging {{ $value }}. Knowledge base may need updates."
+
+      - alert: SimilarityScoreDecreasing
+        expr: |
+          (
+            similarity_score_avg
+            -
+            similarity_score_avg offset 24h
+          ) < -0.10
+        for: 12h
+        labels:
+          severity: warning
+          component: quality
+        annotations:
+          summary: "Similarity scores trending down"
+          description: "Similarity scores for {{ $labels.category }} decreased by {{ $value }} in 24h"
+
+      # ==================================================
+      # SLA Compliance Alerts (Task 12.12)
+      # ==================================================
+      - alert: SLAComplianceBelow95Percent
+        expr: |
+          (
+            sum(resolution_time_avg_seconds < sla_target_seconds) by (category)
+            /
+            sum(tickets_processed_daily) by (category)
+          ) < 0.95
+        for: 24h
+        labels:
+          severity: warning
+          component: sla
+          task: task-12.12
+        annotations:
+          summary: "SLA compliance below 95%"
+          description: "{{ $labels.category }} SLA compliance is {{ $value | humanizePercentage }} (target: 95%)"
+
+      # ==================================================
+      # System Health Indicators
+      # ==================================================
+      - alert: DatabaseConnectionFailed
+        expr: db_connection_status == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Database connection failed"
+          description: "Metrics exporter cannot connect to Supabase database"
+
+      - alert: MetricsCollectionSlow
+        expr: metrics_collection_duration_seconds > 30
+        for: 10m
+        labels:
+          severity: warning
+          component: metrics
+        annotations:
+          summary: "Slow metrics collection"
+          description: "Metrics collection for {{ $labels.metric_type }} taking {{ $value }}s (threshold: 30s)"

@@ -1,0 +1,200 @@
+# Prometheus Configuration for NSW Strata Automation
+# Monitors n8n workflows, Redis queue, and system metrics
+# Date: 2025-10-15
+
+global:
+  # How often to scrape targets by default
+  scrape_interval: 15s
+
+  # How often to evaluate rules
+  evaluation_interval: 15s
+
+  # How long until a scrape request times out
+  scrape_timeout: 10s
+
+  # Labels to add to all time series and alerts
+  external_labels:
+    environment: 'production'
+    project: 'nsw-strata-automation'
+    monitor: 'prometheus-01'
+
+# Alertmanager configuration (optional - configure if using Alertmanager)
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          # - 'alertmanager:9093'
+
+# Rule files for alerting (Task 12.12, 12.13, 12.14)
+rule_files:
+  - '/etc/prometheus/rules/n8n-alerts.yml'
+  - '/etc/prometheus/rules/redis-alerts.yml'
+  - '/etc/prometheus/rules/business-metrics-alerts.yml'
+
+# Scrape configurations
+scrape_configs:
+
+  # ==================================================
+  # n8n Workflow Metrics (Task 12.1)
+  # ==================================================
+  - job_name: 'n8n-main'
+
+    # Scrape n8n metrics every 15 seconds for workflow monitoring
+    scrape_interval: 15s
+    scrape_timeout: 10s
+
+    # n8n metrics endpoint configuration
+    metrics_path: '/metrics'
+
+    static_configs:
+      - targets:
+          # Local Docker development
+          - 'n8n:5678'
+
+          # Production n8n Cloud (replace with your actual endpoint)
+          # - 'your-instance.n8n.cloud:443'
+
+        labels:
+          service: 'n8n'
+          component: 'workflow-engine'
+          instance_type: 'main'
+
+    # For n8n Cloud with HTTPS
+    scheme: 'http'  # Change to 'https' for production
+
+    # Basic auth if required (for n8n Cloud)
+    # basic_auth:
+    #   username: 'prometheus'
+    #   password: 'your-secure-password'
+
+  # ==================================================
+  # n8n Worker Metrics (Task 12.4)
+  # ==================================================
+  - job_name: 'n8n-workers'
+
+    scrape_interval: 15s
+    scrape_timeout: 10s
+    metrics_path: '/metrics'
+
+    # Static configuration for known workers
+    static_configs:
+      - targets:
+          - 'n8n-worker-1:5678'
+          - 'n8n-worker-2:5678'
+          - 'n8n-worker-3:5678'
+
+        labels:
+          service: 'n8n'
+          component: 'worker'
+
+    # Alternative: Service discovery for dynamic worker scaling
+    # dns_sd_configs:
+    #   - names:
+    #       - 'n8n-worker.service.consul'
+    #     type: 'A'
+    #     port: 5678
+
+  # ==================================================
+  # Redis Queue Metrics (Task 12.3)
+  # ==================================================
+  - job_name: 'redis-queue'
+
+    scrape_interval: 10s
+    scrape_timeout: 5s
+
+    static_configs:
+      - targets:
+          # Redis Exporter endpoint (requires redis_exporter to be running)
+          - 'redis-exporter:9121'
+
+        labels:
+          service: 'redis'
+          component: 'queue'
+          queue_type: 'bull'
+
+    # Relabel to include Redis database info
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 'redis-exporter:9121'
+
+  # ==================================================
+  # PostgreSQL/Supabase Metrics (Database monitoring)
+  # ==================================================
+  - job_name: 'postgres-database'
+
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+    static_configs:
+      - targets:
+          # PostgreSQL Exporter (requires postgres_exporter)
+          - 'postgres-exporter:9187'
+
+        labels:
+          service: 'postgresql'
+          component: 'database'
+          database: 'supabase'
+
+  # ==================================================
+  # Custom Business Metrics (Tasks 12.6-12.11)
+  # ==================================================
+  - job_name: 'custom-metrics-exporter'
+
+    # Custom metrics from our metrics-exporter service
+    scrape_interval: 60s
+    scrape_timeout: 15s
+    metrics_path: '/metrics'
+
+    static_configs:
+      - targets:
+          # Custom exporter that queries Supabase and exposes metrics
+          - 'metrics-exporter:8080'
+
+        labels:
+          service: 'custom-metrics'
+          component: 'business-intelligence'
+
+  # ==================================================
+  # Prometheus Self-Monitoring
+  # ==================================================
+  - job_name: 'prometheus'
+
+    scrape_interval: 30s
+    scrape_timeout: 10s
+
+    static_configs:
+      - targets:
+          - 'localhost:9090'
+
+        labels:
+          service: 'prometheus'
+          component: 'monitoring'
+
+# ==================================================
+# Remote Write Configuration (Optional - for long-term storage)
+# ==================================================
+# remote_write:
+#   - url: 'https://prometheus-prod-01.grafana.net/api/prom/push'
+#     basic_auth:
+#       username: 'your-grafana-cloud-id'
+#       password: 'your-grafana-cloud-api-key'
+#     queue_config:
+#       capacity: 10000
+#       max_shards: 10
+#       min_shards: 1
+#       max_samples_per_send: 5000
+#       batch_send_deadline: 5s
+#       min_backoff: 30ms
+#       max_backoff: 100ms
+
+# ==================================================
+# Storage Configuration
+# ==================================================
+# Configured via command-line flags:
+# --storage.tsdb.path=/prometheus/data
+# --storage.tsdb.retention.time=30d
+# --storage.tsdb.retention.size=50GB

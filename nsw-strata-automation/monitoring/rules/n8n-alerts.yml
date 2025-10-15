@@ -1,0 +1,200 @@
+# NSW Strata Automation - n8n Workflow Alert Rules
+# Task 12.12: SLA breach alerting
+# Task 12.13: Error rate alerting
+# Date: 2025-10-15
+
+groups:
+  - name: n8n_workflow_alerts
+    interval: 30s
+    rules:
+      # ==================================================
+      # Task 12.13: Error Rate Alerting (>5%)
+      # ==================================================
+      - alert: HighWorkflowErrorRate
+        expr: |
+          (
+            sum(rate(n8n_workflow_executions_total{status="error"}[5m]))
+            /
+            sum(rate(n8n_workflow_executions_total[5m]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+          component: workflow
+          task: task-12.13
+        annotations:
+          summary: "High workflow error rate detected"
+          description: "Workflow error rate is {{ $value | humanizePercentage }} (threshold: 5%). Check error logs immediately."
+          runbook: "https://docs.nsw-strata-automation.com/runbooks/high-error-rate"
+          dashboard: "http://grafana:3000/d/n8n-workflow-perf"
+
+      - alert: CriticalWorkflowErrorRate
+        expr: |
+          (
+            sum(rate(n8n_workflow_executions_total{status="error"}[5m]))
+            /
+            sum(rate(n8n_workflow_executions_total[5m]))
+          ) > 0.10
+        for: 2m
+        labels:
+          severity: critical
+          component: workflow
+          task: task-12.13
+        annotations:
+          summary: "CRITICAL: Very high workflow error rate"
+          description: "Workflow error rate is {{ $value | humanizePercentage }} (threshold: 10%). Immediate action required!"
+          runbook: "https://docs.nsw-strata-automation.com/runbooks/critical-error-rate"
+
+      # Specific workflow error rate
+      - alert: WorkflowSpecificHighErrorRate
+        expr: |
+          (
+            sum(rate(n8n_workflow_executions_total{status="error"}[10m])) by (workflow_name)
+            /
+            sum(rate(n8n_workflow_executions_total[10m])) by (workflow_name)
+          ) > 0.15
+        for: 5m
+        labels:
+          severity: warning
+          component: workflow
+        annotations:
+          summary: "High error rate for workflow {{ $labels.workflow_name }}"
+          description: "Workflow {{ $labels.workflow_name }} has error rate of {{ $value | humanizePercentage }}"
+
+      # ==================================================
+      # Workflow Performance Alerts
+      # ==================================================
+      - alert: SlowWorkflowExecution
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(n8n_workflow_execution_duration_seconds_bucket[10m])) by (le, workflow_name)
+          ) > 60
+        for: 10m
+        labels:
+          severity: warning
+          component: performance
+        annotations:
+          summary: "Slow workflow execution detected"
+          description: "Workflow {{ $labels.workflow_name }} p95 duration is {{ $value }}s (threshold: 60s)"
+
+      - alert: WorkflowExecutionStalled
+        expr: |
+          n8n_executions_active > 0
+          and
+          rate(n8n_workflow_executions_total[5m]) == 0
+        for: 10m
+        labels:
+          severity: critical
+          component: workflow
+        annotations:
+          summary: "Workflow executions appear stalled"
+          description: "There are {{ $value }} active executions but no completions in 5 minutes. Workflows may be stuck."
+
+      # ==================================================
+      # Worker Health Alerts
+      # ==================================================
+      - alert: WorkerDown
+        expr: up{job="n8n-workers"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: worker
+        annotations:
+          summary: "n8n worker is down"
+          description: "Worker {{ $labels.instance }} has been down for more than 1 minute"
+
+      - alert: LowWorkerCount
+        expr: count(up{job="n8n-workers"} == 1) < 2
+        for: 5m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: "Low n8n worker count"
+          description: "Only {{ $value }} workers are active (expected: 3+)"
+
+      - alert: HighWorkerUtilization
+        expr: |
+          (n8n_executions_active / (count(up{job="n8n-workers"} == 1) * 10)) > 0.80
+        for: 10m
+        labels:
+          severity: warning
+          component: worker
+        annotations:
+          summary: "High worker utilization"
+          description: "Workers are {{ $value | humanizePercentage }} utilized (threshold: 80%)"
+
+      # ==================================================
+      # Task 12.12: SLA Breach Alerting (Simulated)
+      # ==================================================
+      # Note: This requires custom metrics from workflow execution tracking
+      # The actual SLA tracking needs to be implemented in n8n workflows
+
+      - alert: CriticalTicketSLABreach
+        expr: |
+          (time() - ticket_created_timestamp{priority="critical"}) > 900
+          and
+          ticket_status != "resolved"
+        for: 1m
+        labels:
+          severity: critical
+          component: sla
+          task: task-12.12
+        annotations:
+          summary: "Critical ticket SLA breach"
+          description: "Ticket {{ $labels.ticket_id }} has exceeded 15-minute SLA for critical priority"
+          runbook: "https://docs.nsw-strata-automation.com/runbooks/sla-breach"
+
+      # Alternative: Average response time for critical tickets
+      - alert: HighCriticalTicketResponseTime
+        expr: |
+          avg(resolution_time_avg_seconds{priority="critical"}) > 900
+        for: 5m
+        labels:
+          severity: warning
+          component: sla
+          task: task-12.12
+        annotations:
+          summary: "High average response time for critical tickets"
+          description: "Average response time for critical tickets is {{ $value }}s (threshold: 900s / 15min)"
+
+      # ==================================================
+      # Resource Alerts
+      # ==================================================
+      - alert: HighMemoryUsage
+        expr: |
+          (
+            process_resident_memory_bytes{job="n8n-main"}
+            /
+            1073741824
+          ) > 2
+        for: 5m
+        labels:
+          severity: warning
+          component: resource
+        annotations:
+          summary: "High memory usage for n8n"
+          description: "n8n is using {{ $value }}GB of memory (threshold: 2GB)"
+
+      # ==================================================
+      # API Rate Limit Alerts (Task 12.5)
+      # ==================================================
+      - alert: APIRateLimitApproaching
+        expr: api_rate_limit_consumed_percent > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: api
+        annotations:
+          summary: "API rate limit approaching for {{ $labels.provider }}"
+          description: "{{ $labels.provider }} rate limit is {{ $value }}% consumed"
+
+      - alert: APIRateLimitCritical
+        expr: api_rate_limit_consumed_percent > 95
+        for: 1m
+        labels:
+          severity: critical
+          component: api
+        annotations:
+          summary: "CRITICAL: API rate limit nearly exhausted"
+          description: "{{ $labels.provider }} rate limit is {{ $value }}% consumed. Throttling may occur."

@@ -1,0 +1,391 @@
+{
+  "name": "Monthly Performance Report with AI Recommendations",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 1 * *"
+            }
+          ]
+        }
+      },
+      "id": "cron-trigger",
+      "name": "Cron Trigger - 1st of Month 9AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://prometheus:9090/api/v1/query_range",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "sum(tickets_processed_daily)"
+            },
+            {
+              "name": "start",
+              "value": "={{ $now.minus({months: 1}).toUnixInteger() }}"
+            },
+            {
+              "name": "end",
+              "value": "={{ $now.toUnixInteger() }}"
+            },
+            {
+              "name": "step",
+              "value": "86400"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "query-tickets-processed",
+      "name": "Query Tickets Processed",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 200]
+    },
+    {
+      "parameters": {
+        "url": "http://prometheus:9090/api/v1/query_range",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "avg(automation_rate)"
+            },
+            {
+              "name": "start",
+              "value": "={{ $now.minus({months: 1}).toUnixInteger() }}"
+            },
+            {
+              "name": "end",
+              "value": "={{ $now.toUnixInteger() }}"
+            },
+            {
+              "name": "step",
+              "value": "86400"
+            }
+          ]
+        }
+      },
+      "id": "query-automation-rate",
+      "name": "Query Automation Rate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://prometheus:9090/api/v1/query_range",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "avg(csat_score)"
+            },
+            {
+              "name": "start",
+              "value": "={{ $now.minus({months: 1}).toUnixInteger() }}"
+            },
+            {
+              "name": "end",
+              "value": "={{ $now.toUnixInteger() }}"
+            },
+            {
+              "name": "step",
+              "value": "86400"
+            }
+          ]
+        }
+      },
+      "id": "query-csat",
+      "name": "Query CSAT Scores",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "url": "http://prometheus:9090/api/v1/query_range",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "sum(api_cost_total_usd)"
+            },
+            {
+              "name": "start",
+              "value": "={{ $now.minus({months: 1}).toUnixInteger() }}"
+            },
+            {
+              "name": "end",
+              "value": "={{ $now.toUnixInteger() }}"
+            },
+            {
+              "name": "step",
+              "value": "86400"
+            }
+          ]
+        }
+      },
+      "id": "query-api-costs",
+      "name": "Query API Costs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "url": "http://prometheus:9090/api/v1/query_range",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "query",
+              "value": "sum(rate(n8n_workflow_executions_total{status=\"error\"}[1d])) / sum(rate(n8n_workflow_executions_total[1d]))"
+            },
+            {
+              "name": "start",
+              "value": "={{ $now.minus({months: 1}).toUnixInteger() }}"
+            },
+            {
+              "name": "end",
+              "value": "={{ $now.toUnixInteger() }}"
+            },
+            {
+              "name": "step",
+              "value": "86400"
+            }
+          ]
+        }
+      },
+      "id": "query-error-rate",
+      "name": "Query Error Rate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 600]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate metrics from all query results\nconst ticketsData = $input.item(0).json.data.result;\nconst automationData = $input.item(1).json.data.result;\nconst csatData = $input.item(2).json.data.result;\nconst costsData = $input.item(3).json.data.result;\nconst errorData = $input.item(4).json.data.result;\n\n// Calculate totals and averages\nconst totalTickets = ticketsData[0]?.values.reduce((sum, [ts, val]) => sum + parseFloat(val), 0) || 0;\nconst avgAutomation = automationData[0]?.values.reduce((sum, [ts, val]) => sum + parseFloat(val), 0) / automationData[0]?.values.length || 0;\nconst avgCSAT = csatData[0]?.values.reduce((sum, [ts, val]) => sum + parseFloat(val), 0) / csatData[0]?.values.length || 0;\nconst totalCosts = costsData[0]?.values.reduce((sum, [ts, val]) => sum + parseFloat(val), 0) || 0;\nconst avgErrorRate = errorData[0]?.values.reduce((sum, [ts, val]) => sum + parseFloat(val), 0) / errorData[0]?.values.length || 0;\n\n// Calculate trends (compare first week vs last week)\nconst getWeekAvg = (data, isFirst) => {\n  const values = data[0]?.values || [];\n  const weekData = isFirst ? values.slice(0, 7) : values.slice(-7);\n  return weekData.reduce((sum, [ts, val]) => sum + parseFloat(val), 0) / weekData.length;\n};\n\nconst automationTrend = getWeekAvg(automationData, false) - getWeekAvg(automationData, true);\nconst csatTrend = getWeekAvg(csatData, false) - getWeekAvg(csatData, true);\nconst errorTrend = getWeekAvg(errorData, false) - getWeekAvg(errorData, true);\n\nreturn {\n  reportMonth: $now.minus({months: 1}).toFormat('MMMM yyyy'),\n  reportDate: $now.toFormat('yyyy-MM-dd'),\n  metrics: {\n    totalTickets: Math.round(totalTickets),\n    avgAutomationRate: (avgAutomation * 100).toFixed(1),\n    avgCSAT: avgCSAT.toFixed(2),\n    totalAPICosts: totalCosts.toFixed(2),\n    avgErrorRate: (avgErrorRate * 100).toFixed(2),\n    costPerTicket: (totalCosts / totalTickets).toFixed(2)\n  },\n  trends: {\n    automationRateChange: (automationTrend * 100).toFixed(1),\n    csatChange: csatTrend.toFixed(2),\n    errorRateChange: (errorTrend * 100).toFixed(2)\n  }\n};"
+      },
+      "id": "aggregate-metrics",
+      "name": "Aggregate Metrics",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [650, 400]
+    },
+    {
+      "parameters": {
+        "model": "claude-sonnet-4.5",
+        "messages": {
+          "messages": [
+            {
+              "role": "system",
+              "content": "You are an expert AI analyst for NSW Strata Management automation systems. Generate insightful monthly performance reports with actionable recommendations based on metrics data."
+            },
+            {
+              "role": "user",
+              "content": "=Generate a comprehensive monthly performance report for {{ $json.reportMonth }} with AI-powered insights and recommendations.\n\n## Metrics Summary:\n- Total Tickets Processed: {{ $json.metrics.totalTickets }}\n- Average Automation Rate: {{ $json.metrics.avgAutomationRate }}%\n- Average CSAT Score: {{ $json.metrics.avgCSAT }}/5.0\n- Total API Costs: ${{ $json.metrics.totalAPICosts }}\n- Cost per Ticket: ${{ $json.metrics.costPerTicket }}\n- Average Error Rate: {{ $json.metrics.avgErrorRate }}%\n\n## Trends (Month-over-Month):\n- Automation Rate: {{ $json.trends.automationRateChange }}%\n- CSAT Score: {{ $json.trends.csatChange }}\n- Error Rate: {{ $json.trends.errorRateChange }}%\n\nPlease provide:\n1. Executive summary\n2. Key achievements and wins\n3. Areas of concern\n4. Specific, actionable recommendations\n5. Projections for next month\n\nFormat as a professional report suitable for management."
+            }
+          ]
+        }
+      },
+      "id": "generate-ai-report",
+      "name": "Generate AI Report with Claude",
+      "type": "n8n-nodes-base.claude",
+      "typeVersion": 1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Format the AI-generated report with metrics\nconst metrics = $input.item(0).json;\nconst aiReport = $input.item(1).json.output;\n\nconst htmlReport = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; }\n    .header { background: #0066cc; color: white; padding: 20px; text-align: center; }\n    .metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin: 20px 0; }\n    .metric-card { background: #f5f5f5; padding: 15px; border-radius: 8px; text-align: center; }\n    .metric-value { font-size: 32px; font-weight: bold; color: #0066cc; }\n    .metric-label { font-size: 14px; color: #666; margin-top: 5px; }\n    .trend-up { color: green; }\n    .trend-down { color: red; }\n    .report-section { margin: 30px 0; padding: 20px; background: #fafafa; border-left: 4px solid #0066cc; }\n  </style>\n</head>\n<body>\n  <div class=\"header\">\n    <h1>NSW Strata Automation</h1>\n    <h2>Monthly Performance Report</h2>\n    <p>${metrics.reportMonth}</p>\n  </div>\n  \n  <div class=\"metrics\">\n    <div class=\"metric-card\">\n      <div class=\"metric-value\">${metrics.metrics.totalTickets}</div>\n      <div class=\"metric-label\">Tickets Processed</div>\n    </div>\n    <div class=\"metric-card\">\n      <div class=\"metric-value\">${metrics.metrics.avgAutomationRate}%</div>\n      <div class=\"metric-label\">Automation Rate</div>\n      <div class=\"${parseFloat(metrics.trends.automationRateChange) >= 0 ? 'trend-up' : 'trend-down'}\">\n        ${metrics.trends.automationRateChange > 0 ? '↑' : '↓'} ${Math.abs(metrics.trends.automationRateChange)}%\n      </div>\n    </div>\n    <div class=\"metric-card\">\n      <div class=\"metric-value\">${metrics.metrics.avgCSAT}</div>\n      <div class=\"metric-label\">CSAT Score / 5.0</div>\n      <div class=\"${parseFloat(metrics.trends.csatChange) >= 0 ? 'trend-up' : 'trend-down'}\">\n        ${metrics.trends.csatChange > 0 ? '↑' : '↓'} ${Math.abs(metrics.trends.csatChange)}\n      </div>\n    </div>\n    <div class=\"metric-card\">\n      <div class=\"metric-value\">$${metrics.metrics.totalAPICosts}</div>\n      <div class=\"metric-label\">Total API Costs</div>\n    </div>\n    <div class=\"metric-card\">\n      <div class=\"metric-value\">$${metrics.metrics.costPerTicket}</div>\n      <div class=\"metric-label\">Cost per Ticket</div>\n    </div>\n    <div class=\"metric-card\">\n      <div class=\"metric-value\">${metrics.metrics.avgErrorRate}%</div>\n      <div class=\"metric-label\">Error Rate</div>\n      <div class=\"${parseFloat(metrics.trends.errorRateChange) <= 0 ? 'trend-up' : 'trend-down'}\">\n        ${metrics.trends.errorRateChange > 0 ? '↑' : '↓'} ${Math.abs(metrics.trends.errorRateChange)}%\n      </div>\n    </div>\n  </div>\n  \n  <div class=\"report-section\">\n    <h2>AI-Generated Insights and Recommendations</h2>\n    <div>${aiReport.replace(/\\n/g, '<br>')}</div>\n  </div>\n  \n  <div class=\"report-section\">\n    <h3>Dashboards</h3>\n    <ul>\n      <li><a href=\"http://grafana:3000/d/n8n-workflow-perf\">Workflow Performance Dashboard</a></li>\n      <li><a href=\"http://grafana:3000/d/business-metrics\">Business Metrics Dashboard</a></li>\n      <li><a href=\"http://grafana:3000/d/redis-queue-monitor\">Queue Monitoring Dashboard</a></li>\n    </ul>\n  </div>\n  \n  <div style=\"text-align: center; margin-top: 40px; color: #999; font-size: 12px;\">\n    <p>Generated automatically by NSW Strata Automation System</p>\n    <p>Report Date: ${metrics.reportDate}</p>\n  </div>\n</body>\n</html>\n`;\n\nreturn {\n  htmlReport: htmlReport,\n  subject: `NSW Strata Automation - Monthly Report (${metrics.reportMonth})`,\n  metrics: metrics\n};"
+      },
+      "id": "format-html-report",
+      "name": "Format HTML Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 400]
+    },
+    {
+      "parameters": {
+        "channel": "#strata-automation-reports",
+        "text": "=📊 **Monthly Performance Report Available**\\n\\nReport for: {{ $json.metrics.reportMonth }}\\n\\n**Key Metrics:**\\n• Tickets Processed: {{ $json.metrics.metrics.totalTickets }}\\n• Automation Rate: {{ $json.metrics.metrics.avgAutomationRate }}%\\n• CSAT Score: {{ $json.metrics.metrics.avgCSAT }}/5.0\\n• API Costs: ${{ $json.metrics.metrics.totalAPICosts }}\\n\\nView full report in email or Grafana dashboards.",
+        "attachments": []
+      },
+      "id": "send-slack-notification",
+      "name": "Send Slack Notification",
+      "type": "n8n-nodes-base.slack",
+      "typeVersion": 2,
+      "position": [1250, 300],
+      "credentials": {
+        "slackApi": {
+          "id": "slack-webhook",
+          "name": "Slack Webhook"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "noreply@nsw-strata-automation.com",
+        "toEmail": "management@company.com",
+        "subject": "={{ $json.subject }}",
+        "emailFormat": "html",
+        "message": "={{ $json.htmlReport }}"
+      },
+      "id": "send-email-report",
+      "name": "Send Email Report",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [1250, 500]
+    }
+  ],
+  "connections": {
+    "Cron Trigger - 1st of Month 9AM": {
+      "main": [
+        [
+          {
+            "node": "Query Tickets Processed",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Query Automation Rate",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Query CSAT Scores",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Query API Costs",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Query Error Rate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Tickets Processed": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Automation Rate": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query CSAT Scores": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query API Costs": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Error Rate": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Metrics": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Report with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Report with Claude": {
+      "main": [
+        [
+          {
+            "node": "Format HTML Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format HTML Report": {
+      "main": [
+        [
+          {
+            "node": "Send Slack Notification",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send Email Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "tags": ["monitoring", "reporting", "task-12.15"],
+  "triggerCount": 1,
+  "updatedAt": "2025-10-15T00:00:00.000Z",
+  "versionId": "1"
+}
