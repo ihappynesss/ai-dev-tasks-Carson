@@ -96,6 +96,7 @@
 - `tests/validation/routing-validation.test.js` - Routing decision validation tests with similarity threshold accuracy and all 5 paths (19 tests, Tasks 14.4-14.5)
 - `tests/validation/ai-api-fallback.test.js` - AI API fallback mechanism tests validating Claude → GPT-4o → GPT-4o Mini hierarchy with error classification and cost tracking (24 tests, Task 14.6)
 - `tests/validation/progressive-learning.test.js` - Progressive learning phase transition tests with Manual/Assisted/Autonomous phases, milestone validation, and accuracy progression (34 tests, Task 14.7)
+- `tests/validation/categorization-accuracy.test.js` - NSW strata categorization accuracy validation with 37-ticket test dataset achieving 97.30% accuracy (exceeds 85% target), covering all 8 categories and compliance features (33 tests, Task 14.8)
 - `package.json` - Node.js project configuration with Jest test framework and dependencies
 - `docs/deployment-guide.md` - Production deployment documentation
 - `docs/api-documentation.md` - API integration documentation
@@ -334,7 +335,7 @@
   - [x] 14.5 Test all 5 routing paths with representative tickets
   - [x] 14.6 Validate AI API fallback mechanisms
   - [x] 14.7 Test progressive learning phase transitions
-  - [ ] 14.8 Validate NSW strata categorization accuracy (85% target)
+  - [x] 14.8 Validate NSW strata categorization accuracy (85% target)
   - [ ] 14.9 Test multi-turn conversation handling
   - [ ] 14.10 Validate scheduled operations and Cron triggers
   - [ ] 14.11 Perform load testing for 200+ concurrent tickets
