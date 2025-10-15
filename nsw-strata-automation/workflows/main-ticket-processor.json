@@ -14,7 +14,10 @@
       "name": "Webhook - New Ticket",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1.1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "freshdesk-new-ticket"
     },
     {
@@ -37,7 +40,10 @@
       "name": "Immediate Response",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [450, 300]
+      "position": [
+        450,
+        300
+      ]
     },
     {
       "parameters": {
@@ -54,7 +60,10 @@
       "name": "Verify Webhook Signature",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [650, 300]
+      "position": [
+        650,
+        300
+      ]
     },
     {
       "parameters": {
@@ -64,7 +73,10 @@
       "name": "HMAC Signature Verification",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [850, 250]
+      "position": [
+        850,
+        250
+      ]
     },
     {
       "parameters": {
@@ -79,7 +91,10 @@
       "name": "Freshdesk - Get Ticket",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [1050, 250]
+      "position": [
+        1050,
+        250
+      ]
     },
     {
       "parameters": {
@@ -89,7 +104,24 @@
       "name": "Normalize and Extract Entities",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1250, 250]
+      "position": [
+        1250,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Task 8.0: NSW Strata Categorization System\n// This node implements comprehensive NSW strata ticket categorization\n// with 8 primary categories, subcategories, priority logic, and compliance tracking\n\nfunction categorizeNSWStrataTicket(ticket) {\n  const text = ticket.normalizedText.toLowerCase();\n  const entities = ticket.entities;\n\n  // Task 8.2-8.9: Define all 8 primary categories with subcategories and keywords\n  const categories = {\n    // Task 8.2: Maintenance & Repairs\n    maintenanceRepairs: {\n      name: 'Maintenance & Repairs',\n      priority: 'high', // Default, will be refined\n      subcategories: {\n        commonProperty: {\n          keywords: ['roof', 'leak', 'common area', 'lobby', 'hallway', 'stairwell', 'facade', 'building exterior', 'common wall', 'shared'],\n          examples: ['roof leak', 'common area damage', 'lobby repair']\n        },\n        systems: {\n          keywords: ['lift', 'elevator', 'plumbing', 'electrical', 'hvac', 'air conditioning', 'heating', 'ventilation', 'hot water', 'water system'],\n          examples: ['lift malfunction', 'plumbing issue', 'electrical fault']\n        },\n        emergency: {\n          keywords: ['emergency', 'urgent', 'immediate', 'critical', 'dangerous', 'hazardous', 'safety risk', 'flood', 'gas leak', 'power outage'],\n          examples: ['emergency repair', 'gas leak', 'flood damage'],\n          priorityOverride: 'critical'\n        },\n        amenities: {\n          keywords: ['pool', 'gym', 'sauna', 'bbq', 'garden', 'playground', 'tennis court', 'recreation', 'amenity'],\n          examples: ['pool maintenance', 'gym equipment', 'garden repair']\n        },\n        defects: {\n          keywords: ['defect', 'warranty', 'building defect', 'structural', 'crack', 'water ingress', 'mould', 'mold'],\n          examples: ['building defect', 'structural issue', 'water damage']\n        }\n      }\n    },\n\n    // Task 8.3: By-Law Compliance\n    bylawCompliance: {\n      name: 'By-Law Compliance',\n      priority: 'medium',\n      subcategories: {\n        noise: {\n          keywords: ['noise', 'loud', 'noisy', 'disturbance', 'party', 'music', 'tv', 'construction noise', 'late night', 'barking'],\n          examples: ['noise complaint', 'loud music', 'late night disturbance'],\n          bylaws: [1, 2] // Model By-laws 1 & 2\n        },\n        parking: {\n          keywords: ['parking', 'car', 'vehicle', 'garage', 'car space', 'visitor parking', 'unauthorized parking'],\n          examples: ['parking violation', 'unauthorized vehicle'],\n          bylaws: [7] // Model By-law 7\n        },\n        pets: {\n          keywords: ['pet', 'dog', 'cat', 'animal', 'pet approval', 'barking dog'],\n          examples: ['unauthorized pet', 'pet complaint'],\n          bylaws: [8] // Model By-law 8\n        },\n        smoking: {\n          keywords: ['smoking', 'smoke', 'cigarette', 'tobacco', 'vaping'],\n          examples: ['smoking complaint', 'secondhand smoke'],\n          bylaws: [5] // Model By-law 5\n        },\n        rubbish: {\n          keywords: ['rubbish', 'garbage', 'waste', 'trash', 'recycling', 'bin'],\n          examples: ['rubbish disposal', 'garbage issue'],\n          bylaws: [4] // Model By-law 4\n        },\n        shortTermLetting: {\n          keywords: ['airbnb', 'short-term', 'short term', 'rental', 'letting', 'holiday rental', 'accommodation'],\n          examples: ['Airbnb complaint', 'short-term letting'],\n          bylaws: [14], // Model By-law 14\n          priorityOverride: 'high'\n        },\n        nuisance: {\n          keywords: ['nuisance', 'disturbance', 'antisocial', 'harassment', 'behavior', 'behaviour'],\n          examples: ['nuisance complaint', 'antisocial behavior'],\n          bylaws: [3] // Model By-law 3\n        }\n      }\n    },\n\n    // Task 8.4: Financial Matters\n    financialMatters: {\n      name: 'Financial Matters',\n      priority: 'medium',\n      subcategories: {\n        levies: {\n          keywords: ['levy', 'levies', 'strata levy', 'admin fund', 'sinking fund', 'capital works fund', 'overdue', 'arrears', 'payment plan'],\n          examples: ['unpaid levies', 'levy arrears', 'payment plan'],\n          legislation: ['SSMA 2015 Section 85-86']\n        },\n        disputes: {\n          keywords: ['financial dispute', 'levy dispute', 'charge dispute', 'cost dispute', 'billing error'],\n          examples: ['disputed levy', 'incorrect charge'],\n          legislation: ['SSMA 2015 Section 232']\n        },\n        statements: {\n          keywords: ['financial statement', 'levy notice', 'statement', 'invoice', 'account', 'balance'],\n          examples: ['request statement', 'levy notice inquiry']\n        },\n        insurance: {\n          keywords: ['insurance', 'claim', 'building insurance', 'contents insurance', 'public liability', 'strata insurance'],\n          examples: ['insurance claim', 'insurance inquiry'],\n          legislation: ['SSMA 2015 Section 160-162']\n        }\n      }\n    },\n\n    // Task 8.5: Governance & Administration\n    governanceAdministration: {\n      name: 'Governance & Administration',\n      priority: 'medium',\n      subcategories: {\n        meetings: {\n          keywords: ['agm', 'annual general meeting', 'egm', 'extraordinary general meeting', 'general meeting', 'meeting', 'notice', 'agenda', 'minutes'],\n          examples: ['AGM inquiry', 'meeting notice', 'minutes request'],\n          legislation: ['SSMA 2015 Section 18-31']\n        },\n        committees: {\n          keywords: ['committee', 'strata committee', 'executive committee', 'nomination', 'election'],\n          examples: ['committee nomination', 'committee inquiry'],\n          legislation: ['SSMA 2015 Section 32-45']\n        },\n        bylaws: {\n          keywords: ['by-law', 'bylaw', 'strata by-law', 'model by-law', 'by-law change', 'special resolution'],\n          examples: ['by-law inquiry', 'change by-law'],\n          legislation: ['SSMA 2015 Section 136-151']\n        },\n        records: {\n          keywords: ['records', 'documents', 'strata records', 'roll', 'register', 'inspection', 'access'],\n          examples: ['access records', 'document request'],\n          legislation: ['SSMA 2015 Section 178-183']\n        },\n        compliance: {\n          keywords: ['compliance', 'regulation', 'requirement', 'obligation', 'duty', 'responsibility'],\n          examples: ['compliance inquiry', 'legal obligation'],\n          legislation: ['SSMA 2015', 'SSDA 2015']\n        }\n      }\n    },\n\n    // Task 8.6: Renovations & Alterations (Three-tier system)\n    renovationsAlterations: {\n      name: 'Renovations & Alterations',\n      priority: 'medium',\n      subcategories: {\n        cosmetic: {\n          keywords: ['paint', 'carpet', 'curtain', 'blind', 'cosmetic', 'internal painting', 'floor covering'],\n          examples: ['painting request', 'carpet replacement'],\n          approvalRequired: false,\n          legislation: ['SSMA 2015 Section 109'] // Cosmetic work definition\n        },\n        minor: {\n          keywords: ['flooring', 'timber floor', 'laminate', 'tile', 'kitchen', 'bathroom', 'minor renovation', 'internal alteration'],\n          examples: ['timber flooring', 'kitchen renovation'],\n          approvalRequired: true,\n          approvalType: 'committee',\n          legislation: ['SSMA 2015 Section 108-110']\n        },\n        major: {\n          keywords: ['structural', 'major renovation', 'wall removal', 'balcony', 'window', 'external', 'major alteration', 'building work'],\n          examples: ['structural change', 'balcony enclosure'],\n          approvalRequired: true,\n          approvalType: 'general_meeting_special_resolution',\n          priorityOverride: 'high',\n          legislation: ['SSMA 2015 Section 108', 'SSDA 2015']\n        }\n      }\n    },\n\n    // Task 8.7: Disputes & Complaints\n    disputesComplaints: {\n      name: 'Disputes & Complaints',\n      priority: 'high',\n      subcategories: {\n        neighbor: {\n          keywords: ['neighbor', 'neighbour', 'lot owner', 'resident', 'tenant', 'dispute with neighbor'],\n          examples: ['neighbor dispute', 'resident complaint']\n        },\n        ownersCorporation: {\n          keywords: ['owners corporation', 'oc dispute', 'strata scheme', 'body corporate'],\n          examples: ['dispute with OC', 'OC complaint']\n        },\n        strataManager: {\n          keywords: ['strata manager', 'managing agent', 'property manager', 'manager complaint'],\n          examples: ['strata manager complaint', 'service issue']\n        },\n        ncat: {\n          keywords: ['ncat', 'tribunal', 'civil and administrative tribunal', 'mediation', 'hearing', 'application', 'order'],\n          examples: ['NCAT application', 'tribunal matter'],\n          priorityOverride: 'critical',\n          legislation: ['SSMA 2015 Section 232-240']\n        }\n      }\n    },\n\n    // Task 8.8: Security & Safety\n    securitySafety: {\n      name: 'Security & Safety',\n      priority: 'high',\n      subcategories: {\n        access: {\n          keywords: ['access', 'entry', 'intercom', 'key', 'fob', 'lock', 'security gate', 'access control'],\n          examples: ['access issue', 'key request', 'intercom fault']\n        },\n        cctv: {\n          keywords: ['cctv', 'camera', 'surveillance', 'security camera', 'recording', 'privacy'],\n          examples: ['CCTV inquiry', 'camera installation'],\n          legislation: ['Privacy Act 1988']\n        },\n        hazards: {\n          keywords: ['hazard', 'dangerous', 'unsafe', 'safety concern', 'risk', 'trip hazard'],\n          examples: ['safety hazard', 'unsafe condition'],\n          priorityOverride: 'critical'\n        },\n        fireSafety: {\n          keywords: ['fire', 'fire safety', 'smoke alarm', 'fire alarm', 'extinguisher', 'fire exit', 'emergency exit', 'evacuation'],\n          examples: ['fire safety issue', 'smoke alarm'],\n          priorityOverride: 'critical',\n          legislation: ['Environmental Planning and Assessment Regulation 2021']\n        },\n        windowSafety: {\n          keywords: ['window', 'window safety', 'balustrade', 'railing', 'fall prevention', 'child safety'],\n          examples: ['window safety', 'balustrade issue'],\n          legislation: ['SSMA 2015 Section 106'] // Window safety devices\n        }\n      }\n    },\n\n    // Task 8.9: Information Requests\n    informationRequests: {\n      name: 'Information Requests',\n      priority: 'low',\n      subcategories: {\n        general: {\n          keywords: ['information', 'inquiry', 'question', 'how to', 'what is', 'general inquiry', 'clarification'],\n          examples: ['general inquiry', 'information request']\n        },\n        onboarding: {\n          keywords: ['new owner', 'new tenant', 'move in', 'moving in', 'onboarding', 'welcome', 'first time'],\n          examples: ['new owner inquiry', 'moving in information']\n        },\n        vendor: {\n          keywords: ['vendor', 'contractor', 'tradesperson', 'approved contractor', 'service provider'],\n          examples: ['contractor inquiry', 'vendor list request']\n        }\n      }\n    }\n  };\n\n  // Task 8.14: Keyword-based initial classification\n  function performKeywordClassification() {\n    const scores = {};\n\n    // Score each category based on keyword matches\n    for (const [categoryKey, category] of Object.entries(categories)) {\n      scores[categoryKey] = { score: 0, subcategory: null, matchedKeywords: [] };\n\n      for (const [subcatKey, subcat] of Object.entries(category.subcategories)) {\n        let subcatScore = 0;\n        const matched = [];\n\n        for (const keyword of subcat.keywords) {\n          if (text.includes(keyword.toLowerCase())) {\n            subcatScore += 1;\n            matched.push(keyword);\n          }\n        }\n\n        if (subcatScore > scores[categoryKey].score) {\n          scores[categoryKey] = {\n            score: subcatScore,\n            subcategory: subcatKey,\n            matchedKeywords: matched,\n            subcategoryData: subcat\n          };\n        }\n      }\n    }\n\n    // Find best match\n    let bestCategory = null;\n    let bestScore = 0;\n\n    for (const [categoryKey, data] of Object.entries(scores)) {\n      if (data.score > bestScore) {\n        bestScore = data.score;\n        bestCategory = {\n          category: categoryKey,\n          categoryName: categories[categoryKey].name,\n          ...data\n        };\n      }\n    }\n\n    return bestCategory;\n  }\n\n  // Task 8.15: Complexity scoring (1-5)\n  function calculateComplexityScore(classification) {\n    let complexity = 1; // Base complexity\n\n    // Factor 1: Multiple entity types mentioned\n    const entityCount =\n      (entities.propertyAddresses?.length || 0) +\n      (entities.lotNumbers?.length || 0) +\n      (entities.strataPlanNumbers?.length || 0) +\n      (entities.legislationReferences?.length || 0) +\n      (entities.bylawNumbers?.length || 0);\n\n    if (entityCount > 3) complexity += 1;\n\n    // Factor 2: Multiple keywords matched\n    if (classification && classification.score > 5) complexity += 1;\n\n    // Factor 3: Category-specific complexity\n    if (classification) {\n      const complexCategories = ['disputesComplaints', 'renovationsAlterations', 'governanceAdministration'];\n      if (complexCategories.includes(classification.category)) complexity += 1;\n\n      // NCAT matters are always complex\n      if (classification.subcategory === 'ncat') complexity = 5;\n\n      // Major renovations are complex\n      if (classification.subcategory === 'major') complexity += 1;\n    }\n\n    // Factor 4: Text length (longer = potentially more complex)\n    if (ticket.textLength > 500) complexity += 1;\n\n    // Factor 5: Legislation references (indicates legal complexity)\n    if (entities.legislationReferences?.length > 0) complexity += 1;\n\n    // Cap at 5\n    return Math.min(complexity, 5);\n  }\n\n  // Task 8.15: Stakeholder type identification\n  function identifyStakeholders(classification) {\n    const stakeholders = {\n      ownersCorporation: false,\n      strataCommittee: false,\n      strataManager: false,\n      lotOwner: true, // Always involved (requester)\n      tenant: false,\n      contractor: false,\n      thirdParty: false\n    };\n\n    // Identify from text\n    if (text.includes('tenant') || text.includes('renter')) stakeholders.tenant = true;\n    if (text.includes('contractor') || text.includes('tradesperson')) stakeholders.contractor = true;\n    if (text.includes('neighbor') || text.includes('neighbour')) stakeholders.thirdParty = true;\n\n    // Category-based stakeholders\n    if (classification) {\n      const category = classification.category;\n\n      // OC always involved in financial, governance, and major works\n      if (['financialMatters', 'governanceAdministration'].includes(category)) {\n        stakeholders.ownersCorporation = true;\n        stakeholders.strataCommittee = true;\n        stakeholders.strataManager = true;\n      }\n\n      // Committee approval required for minor renovations\n      if (category === 'renovationsAlterations' && classification.subcategory === 'minor') {\n        stakeholders.strataCommittee = true;\n      }\n\n      // Major works require OC approval\n      if (category === 'renovationsAlterations' && classification.subcategory === 'major') {\n        stakeholders.ownersCorporation = true;\n        stakeholders.strataCommittee = true;\n      }\n\n      // Maintenance typically involves strata manager\n      if (category === 'maintenanceRepairs') {\n        stakeholders.strataManager = true;\n        if (classification.subcategory === 'emergency') {\n          stakeholders.contractor = true;\n        }\n      }\n    }\n\n    return stakeholders;\n  }\n\n  // Task 8.10: Priority assignment logic\n  function assignPriority(classification, complexity) {\n    // Task 8.10: Critical priority (same-day per SSMA Section 106)\n    if (classification && classification.subcategoryData?.priorityOverride === 'critical') {\n      return {\n        level: 'critical',\n        responseTime: '4 hours', // Same business day\n        dueBy: addHours(new Date(), 4),\n        legislation: 'SSMA 2015 Section 106'\n      };\n    }\n\n    // Emergency repairs\n    if (classification?.subcategory === 'emergency') {\n      return {\n        level: 'critical',\n        responseTime: '4 hours',\n        dueBy: addHours(new Date(), 4),\n        legislation: 'SSMA 2015 Section 106'\n      };\n    }\n\n    // High priority (4-hour response)\n    if (classification?.subcategoryData?.priorityOverride === 'high' ||\n        ticket.priority === 'urgent' ||\n        complexity >= 4) {\n      return {\n        level: 'high',\n        responseTime: '4 hours',\n        dueBy: addHours(new Date(), 4)\n      };\n    }\n\n    // Medium priority (1 business day)\n    if (classification?.category === 'bylawCompliance' ||\n        classification?.category === 'maintenanceRepairs' ||\n        complexity === 3) {\n      return {\n        level: 'medium',\n        responseTime: '1 business day',\n        dueBy: addBusinessDays(new Date(), 1)\n      };\n    }\n\n    // Low priority (2 business days)\n    return {\n      level: 'low',\n      responseTime: '2 business days',\n      dueBy: addBusinessDays(new Date(), 2)\n    };\n  }\n\n  // Helper functions\n  function addHours(date, hours) {\n    const result = new Date(date);\n    result.setHours(result.getHours() + hours);\n    return result.toISOString();\n  }\n\n  function addBusinessDays(date, days) {\n    const result = new Date(date);\n    let addedDays = 0;\n\n    while (addedDays < days) {\n      result.setDate(result.getDate() + 1);\n      // Skip weekends\n      if (result.getDay() !== 0 && result.getDay() !== 6) {\n        addedDays++;\n      }\n    }\n\n    return result.toISOString();\n  }\n\n  // Main classification process\n  const classification = performKeywordClassification();\n  const complexity = calculateComplexityScore(classification);\n  const stakeholders = identifyStakeholders(classification);\n  const priority = assignPriority(classification, complexity);\n\n  // Task 8.11: Legislation references\n  const legislationReferences = [];\n  if (classification && classification.subcategoryData?.legislation) {\n    legislationReferences.push(...classification.subcategoryData.legislation);\n  }\n  // Add extracted legislation from ticket text\n  if (entities.legislationReferences?.length > 0) {\n    legislationReferences.push(...entities.legislationReferences);\n  }\n\n  // Task 8.12: By-laws references\n  const bylawReferences = [];\n  if (classification && classification.subcategoryData?.bylaws) {\n    bylawReferences.push(...classification.subcategoryData.bylaws);\n  }\n  // Add extracted by-laws from ticket text\n  if (entities.bylawNumbers?.length > 0) {\n    bylawReferences.push(...entities.bylawNumbers);\n  }\n\n  // Task 8.13: Check for 2025 reforms applicability\n  const reforms2025 = {\n    capitalWorksPlanning: false,\n    disclosureObligations: false,\n    accessibilityApprovals: false\n  };\n\n  if (classification?.category === 'renovationsAlterations' && classification?.subcategory === 'major') {\n    reforms2025.accessibilityApprovals = true;\n  }\n  if (classification?.category === 'governanceAdministration') {\n    reforms2025.capitalWorksPlanning = true;\n    reforms2025.disclosureObligations = true;\n  }\n  if (text.includes('capital works') || text.includes('10 year plan')) {\n    reforms2025.capitalWorksPlanning = true;\n  }\n\n  // Return comprehensive categorization result\n  return {\n    // Primary classification\n    primaryCategory: classification?.categoryName || 'Uncategorized',\n    primaryCategoryKey: classification?.category || null,\n    subcategory: classification?.subcategory || null,\n    subcategoryName: classification?.subcategoryData?.examples?.[0] || null,\n\n    // Scoring\n    matchScore: classification?.score || 0,\n    matchedKeywords: classification?.matchedKeywords || [],\n    confidence: classification ? Math.min(classification.score / 10, 1.0) : 0,\n\n    // Task 8.15: Complexity and stakeholders\n    complexity: complexity,\n    complexityDescription: ['Very Simple', 'Simple', 'Moderate', 'Complex', 'Very Complex'][complexity - 1],\n    stakeholders: stakeholders,\n    stakeholderCount: Object.values(stakeholders).filter(Boolean).length,\n\n    // Task 8.10: Priority\n    priority: priority,\n\n    // Task 8.11: Legislation\n    legislationReferences: [...new Set(legislationReferences)],\n\n    // Task 8.12: By-laws\n    bylawReferences: [...new Set(bylawReferences)],\n\n    // Task 8.13: 2025 reforms\n    reforms2025: reforms2025,\n\n    // Approval requirements (for renovations)\n    approvalRequired: classification?.subcategoryData?.approvalRequired || false,\n    approvalType: classification?.subcategoryData?.approvalType || null,\n\n    // Metadata\n    classificationTimestamp: new Date().toISOString(),\n    classificationMethod: classification && classification.score > 2 ? 'keyword-match' : 'fallback-required'\n  };\n}\n\n// Export for n8n Code node\nconst categorization = categorizeNSWStrataTicket($json);\n\n// Merge categorization with ticket data\nreturn {\n  ...$json,\n  categorization: categorization,\n  // Update priority based on categorization if different\n  priority: categorization.priority?.level || $json.priority,\n  // Add category tag\n  tags: [...($json.tags || []), categorization.primaryCategory.toLowerCase().replace(/\\s+/g, '-')],\n  // Add complexity to custom fields\n  customFields: {\n    ...$json.customFields,\n    complexity: categorization.complexity,\n    primaryCategory: categorization.primaryCategory,\n    subcategory: categorization.subcategory\n  }\n};\n"
+      },
+      "id": "nsw-categorization",
+      "name": "NSW Strata Categorization",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1350,
+        250
+      ],
+      "notes": "Task 8.0: Comprehensive NSW strata categorization with 8 categories, subcategories, priority logic, and compliance tracking"
     },
     {
       "parameters": {
@@ -113,7 +145,10 @@
       "name": "Validate Ticket Data",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [1450, 250]
+      "position": [
+        1450,
+        250
+      ]
     },
     {
       "parameters": {
@@ -143,7 +178,10 @@
       "name": "Generate Embedding (OpenAI)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [1650, 200]
+      "position": [
+        1650,
+        200
+      ]
     },
     {
       "parameters": {
@@ -158,7 +196,10 @@
       "name": "Hybrid Search (Vector + Keyword)",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1850, 200],
+      "position": [
+        1850,
+        200
+      ],
       "credentials": {
         "postgres": {
           "id": "supabase-nsw-strata",
@@ -178,7 +219,10 @@
       "name": "Fallback: Keyword-Only Search",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [1850, 400],
+      "position": [
+        1850,
+        400
+      ],
       "credentials": {
         "postgres": {
           "id": "supabase-nsw-strata",
@@ -197,7 +241,10 @@
       "name": "Merge Ticket + Knowledge",
       "type": "n8n-nodes-base.merge",
       "typeVersion": 2.1,
-      "position": [2050, 250]
+      "position": [
+        2050,
+        250
+      ]
     },
     {
       "parameters": {
@@ -207,7 +254,10 @@
       "name": "Decision Engine - Routing Logic",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2250, 250]
+      "position": [
+        2250,
+        250
+      ]
     },
     {
       "parameters": {
@@ -224,7 +274,10 @@
       "name": "Route Switch",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 1,
-      "position": [2450, 250]
+      "position": [
+        2450,
+        250
+      ]
     },
     {
       "parameters": {
@@ -238,7 +291,10 @@
       "name": "Fetch Full Knowledge Content",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [2450, 100],
+      "position": [
+        2450,
+        100
+      ],
       "credentials": {
         "postgres": {
           "id": "supabase-nsw-strata",
@@ -255,7 +311,10 @@
       "name": "Path 1: Auto-Respond",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2650, 100],
+      "position": [
+        2650,
+        100
+      ],
       "notes": "Task 5.2: Auto-respond with high confidence, lightweight personalization"
     },
     {
@@ -284,7 +343,10 @@
       "name": "Post Reply to Freshdesk",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [2850, 100],
+      "position": [
+        2850,
+        100
+      ],
       "credentials": {
         "freshdeskApi": {
           "id": "freshdesk-api",
@@ -319,7 +381,10 @@
       "name": "Update Ticket Status & Tags",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.1,
-      "position": [3050, 100],
+      "position": [
+        3050,
+        100
+      ],
       "credentials": {
         "freshdeskApi": {
           "id": "freshdesk-api",
@@ -336,7 +401,10 @@
       "name": "Path 2: Auto-Refine",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2650, 200],
+      "position": [
+        2650,
+        200
+      ],
       "notes": "Task 5.3: Auto-refine with Claude (to be implemented in Task 6.0)"
     },
     {
@@ -347,7 +415,10 @@
       "name": "Path 3: Generate Draft",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2650, 300],
+      "position": [
+        2650,
+        300
+      ],
       "notes": "Task 5.4: Generate draft with Claude (to be implemented in Task 6.0)"
     },
     {
@@ -358,7 +429,10 @@
       "name": "Path 4: Deep Research",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2650, 400],
+      "position": [
+        2650,
+        400
+      ],
       "notes": "Task 5.5: Deep research with Perplexity (to be implemented in Task 6.0)"
     },
     {
@@ -369,7 +443,10 @@
       "name": "Path 5: Immediate Escalation",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [2650, 500],
+      "position": [
+        2650,
+        500
+      ],
       "notes": "Task 5.6: Immediate escalation for critical/complex tickets"
     },
     {
@@ -380,7 +457,10 @@
       "name": "Error Handler",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1450, 450]
+      "position": [
+        1450,
+        450
+      ]
     },
     {
       "parameters": {
@@ -394,7 +474,10 @@
       "name": "Track Routing Statistics",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2.4,
-      "position": [3250, 250],
+      "position": [
+        3250,
+        250
+      ],
       "credentials": {
         "postgres": {
           "id": "supabase-nsw-strata",
@@ -465,7 +548,7 @@
       "main": [
         [
           {
-            "node": "Validate Ticket Data",
+            "node": "NSW Strata Categorization",
             "type": "main",
             "index": 0
           }
@@ -667,6 +750,17 @@
         [
           {
             "node": "Update Ticket Status & Tags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "NSW Strata Categorization": {
+      "main": [
+        [
+          {
+            "node": "Validate Ticket Data",
             "type": "main",
             "index": 0
           }

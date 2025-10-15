@@ -28,7 +28,8 @@
 - `nsw-strata-automation/knowledge/information-requests/general/001-strata-records-access.md` - Knowledge entry for records access
 - `nsw-strata-automation/.github/workflows/knowledge-versioning.yml` - GitHub Actions workflow for automated knowledge versioning
 - `nsw-strata-automation/backup-database.sh` - Database backup script with 30-day retention
-- `nsw-strata-automation/workflows/main-ticket-processor.json` - Main n8n workflow for processing new Freshdesk tickets with webhook receiver, entity extraction, hybrid search, and 5-path routing
+- `nsw-strata-automation/workflows/main-ticket-processor.json` - Main n8n workflow for processing new Freshdesk tickets with webhook receiver, entity extraction, NSW categorization, hybrid search, and 5-path routing
+- `nsw-strata-automation/workflows/nsw-categorization-node.js` - NSW Strata categorization system with 8 primary categories, subcategories, priority logic, SSMA 2015 compliance, model by-laws, and 2025 reforms
 - `nsw-strata-automation/workflows/reply-handler.json` - Workflow for handling customer replies with sentiment analysis, multi-turn tracking, and escalation logic
 - `nsw-strata-automation/workflows/scheduled-maintenance.json` - Scheduled workflow (2 AM daily) for duplicate detection, success rate calculation, and reporting
 - `nsw-strata-automation/workflows/manual-trigger.json` - Manual trigger workflow for on-demand ticket reprocessing and testing
@@ -172,22 +173,22 @@
   - [x] 7.14 Create model fine-tuning pipeline after 500+ examples
   - [x] 7.15 Generate monthly optimization reports with threshold recommendations
 
-- [ ] 8.0 Implement NSW strata categorization and compliance
-  - [ ] 8.1 Create Switch node with 8 output branches for primary categories
-  - [ ] 8.2 Implement Maintenance & Repairs category with 5 subcategories (common property, systems, emergency, amenities, defects)
-  - [ ] 8.3 Implement By-Law Compliance with 7 subcategories (noise, parking, pets, smoking, rubbish, short-term letting, nuisance)
-  - [ ] 8.4 Implement Financial Matters with 4 subcategories (levies, disputes, statements, insurance)
-  - [ ] 8.5 Implement Governance & Administration with 5 subcategories (meetings, committees, by-laws, records, compliance)
-  - [ ] 8.6 Implement Renovations & Alterations with three-tier system (cosmetic, minor, major)
-  - [ ] 8.7 Implement Disputes & Complaints with 4 subcategories (neighbor, owners corporation, strata manager, NCAT)
-  - [ ] 8.8 Implement Security & Safety with 5 subcategories (access, CCTV, hazards, fire safety, window safety)
-  - [ ] 8.9 Implement Information Requests with 3 subcategories (general, onboarding, vendor)
-  - [ ] 8.10 Create priority assignment logic: Critical (same-day per SSMA Section 106), High (4-hour), Medium (1 day), Low (2 days)
-  - [ ] 8.11 Implement SSMA 2015 and SSDA 2015 reference system with section lookup
-  - [ ] 8.12 Configure all 18 model by-laws including vehicles, damage, noise, compliance procedures, and notice requirements
-  - [ ] 8.13 Implement 2025 reforms: capital works 10-year planning, disclosure obligations, accessibility approvals
-  - [ ] 8.14 Create keyword-based initial classification with Claude API fallback
-  - [ ] 8.15 Implement complexity scoring (1-5) and stakeholder type identification
+- [x] 8.0 Implement NSW strata categorization and compliance
+  - [x] 8.1 Create Switch node with 8 output branches for primary categories
+  - [x] 8.2 Implement Maintenance & Repairs category with 5 subcategories (common property, systems, emergency, amenities, defects)
+  - [x] 8.3 Implement By-Law Compliance with 7 subcategories (noise, parking, pets, smoking, rubbish, short-term letting, nuisance)
+  - [x] 8.4 Implement Financial Matters with 4 subcategories (levies, disputes, statements, insurance)
+  - [x] 8.5 Implement Governance & Administration with 5 subcategories (meetings, committees, by-laws, records, compliance)
+  - [x] 8.6 Implement Renovations & Alterations with three-tier system (cosmetic, minor, major)
+  - [x] 8.7 Implement Disputes & Complaints with 4 subcategories (neighbor, owners corporation, strata manager, NCAT)
+  - [x] 8.8 Implement Security & Safety with 5 subcategories (access, CCTV, hazards, fire safety, window safety)
+  - [x] 8.9 Implement Information Requests with 3 subcategories (general, onboarding, vendor)
+  - [x] 8.10 Create priority assignment logic: Critical (same-day per SSMA Section 106), High (4-hour), Medium (1 day), Low (2 days)
+  - [x] 8.11 Implement SSMA 2015 and SSDA 2015 reference system with section lookup
+  - [x] 8.12 Configure all 18 model by-laws including vehicles, damage, noise, compliance procedures, and notice requirements
+  - [x] 8.13 Implement 2025 reforms: capital works 10-year planning, disclosure obligations, accessibility approvals
+  - [x] 8.14 Create keyword-based initial classification with Claude API fallback
+  - [x] 8.15 Implement complexity scoring (1-5) and stakeholder type identification
 
 - [x] 9.0 Build conversation management and multi-turn handling
   - [x] 9.1 Create Reply Workflow triggered by Ticket Update webhook
