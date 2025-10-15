@@ -1,0 +1,56 @@
+{
+  "name": "nsw-strata-automation",
+  "version": "1.0.0",
+  "description": "NSW Strata Automation workflows for n8n with AI-powered ticket processing",
+  "main": "index.js",
+  "scripts": {
+    "test": "jest --coverage --verbose",
+    "test:watch": "jest --watch",
+    "test:unit": "jest tests/workflow-tests/unit --coverage",
+    "test:integration": "jest tests/workflow-tests/integration --coverage",
+    "test:node": "jest tests/workflow-tests/unit/nodes",
+    "lint": "eslint ."
+  },
+  "keywords": [
+    "n8n",
+    "workflow",
+    "automation",
+    "strata",
+    "nsw",
+    "ai"
+  ],
+  "author": "NSW Strata Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/jest": "^29.5.11",
+    "@types/node": "^20.10.6",
+    "eslint": "^8.56.0",
+    "jest": "^29.7.0",
+    "nock": "^13.5.0"
+  },
+  "dependencies": {
+    "axios": "^1.6.5",
+    "crypto": "^1.0.1"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "coverageDirectory": "coverage",
+    "collectCoverageFrom": [
+      "workflows/**/*.js",
+      "!workflows/**/*.json",
+      "!**/node_modules/**"
+    ],
+    "testMatch": [
+      "**/tests/**/*.test.js",
+      "**/tests/**/*.spec.js"
+    ],
+    "coverageThreshold": {
+      "global": {
+        "branches": 70,
+        "functions": 70,
+        "lines": 70,
+        "statements": 70
+      }
+    }
+  }
+}

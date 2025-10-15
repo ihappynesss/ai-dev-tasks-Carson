@@ -77,6 +77,15 @@
 - `database/consent-tracking-schema.sql` - AI processing consent tracking schema with compliance functions (Task 13.14)
 - `config/security/incident-response-procedures.md` - Complete security incident response procedures and playbooks (Task 13.15)
 - `tests/workflow-tests/` - n8n workflow test configurations
+- `tests/workflow-tests/README.md` - Comprehensive testing suite documentation with test structure, coverage goals, and usage instructions
+- `tests/workflow-tests/unit/nodes/webhook-node.test.js` - Unit tests for webhook receiver and HMAC-SHA256 signature verification (240 tests total)
+- `tests/workflow-tests/unit/nodes/freshdesk-node.test.js` - Unit tests for Freshdesk API integration with retry logic validation
+- `tests/workflow-tests/unit/nodes/entity-extraction-node.test.js` - Unit tests for HTML stripping, NSW entity extraction, and keyword categorization
+- `tests/workflow-tests/unit/nodes/nsw-categorization-node.test.js` - Unit tests for 8-category NSW strata classification system (Task 8.0)
+- `tests/workflow-tests/unit/nodes/database-node.test.js` - Unit tests for Supabase vector search, hybrid search, and query optimization (Task 4.0)
+- `tests/workflow-tests/unit/nodes/routing-decision-node.test.js` - Unit tests for 5-path routing decision engine and threshold logic (Task 5.0)
+- `tests/workflow-tests/unit/nodes/error-handling-node.test.js` - Unit tests for error classification, circuit breaker, and fallback strategies (Task 11.0)
+- `package.json` - Node.js project configuration with Jest test framework and dependencies
 - `docs/deployment-guide.md` - Production deployment documentation
 - `docs/api-documentation.md` - API integration documentation
 
@@ -307,7 +316,7 @@
   - [x] 13.15 Create security incident response procedures
 
 - [ ] 14.0 Perform testing and quality assurance
-  - [ ] 14.1 Create unit tests for each workflow node configuration
+  - [x] 14.1 Create unit tests for each workflow node configuration
   - [ ] 14.2 Implement integration tests for Freshdesk webhook handling
   - [ ] 14.3 Test Supabase vector search performance with 10K+ entries
   - [ ] 14.4 Validate similarity threshold accuracy with test datasets
