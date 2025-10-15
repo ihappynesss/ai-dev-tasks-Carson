@@ -1,0 +1,301 @@
+{
+  "name": "Error Handler Workflow",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Task 11.2: Workflow-level error trigger with full context capture\n// Task 11.7: Error classification system\n\nconst error = $input.first().json;\nconst execution = $execution;\n\n// Task 11.7: Classify error type\nfunction classifyError(errorMsg, errorNode) {\n  const msg = (errorMsg || '').toLowerCase();\n  \n  // Transient errors (retry might help)\n  if (msg.includes('timeout') || \n      msg.includes('econnrefused') ||\n      msg.includes('enotfound') ||\n      msg.includes('socket hang up') ||\n      msg.includes('503') ||\n      msg.includes('502') ||\n      msg.includes('504') ||\n      msg.includes('rate limit')) {\n    return {\n      type: 'transient',\n      severity: 'warning',\n      retryable: true,\n      description: 'Temporary failure, likely to resolve on retry'\n    };\n  }\n  \n  // Systematic errors (code/config issues)\n  if (msg.includes('validation') ||\n      msg.includes('parse') ||\n      msg.includes('syntax') ||\n      msg.includes('undefined') ||\n      msg.includes('null') ||\n      msg.includes('400') ||\n      msg.includes('401') ||\n      msg.includes('403') ||\n      msg.includes('404')) {\n    return {\n      type: 'systematic',\n      severity: 'error',\n      retryable: false,\n      description: 'Code or configuration issue requiring manual intervention'\n    };\n  }\n  \n  // Critical errors (data loss, security, corruption)\n  if (msg.includes('database') ||\n      msg.includes('corrupt') ||\n      msg.includes('security') ||\n      msg.includes('unauthorized') ||\n      msg.includes('permission denied') ||\n      msg.includes('500')) {\n    return {\n      type: 'critical',\n      severity: 'critical',\n      retryable: false,\n      description: 'Critical system failure requiring immediate attention'\n    };\n  }\n  \n  // Unknown errors\n  return {\n    type: 'unknown',\n    severity: 'error',\n    retryable: false,\n    description: 'Unknown error type'\n  };\n}\n\n// Extract error details\nconst errorNode = error.node?.name || 'Unknown Node';\nconst errorMessage = error.message || error.error?.message || 'No error message';\nconst errorStack = error.stack || error.error?.stack || null;\nconst errorCode = error.httpCode || error.error?.code || null;\n\n// Classify the error\nconst classification = classifyError(errorMessage, errorNode);\n\n// Extract ticket context if available\nconst ticketContext = {\n  ticketId: error.ticketId || error.ticket?.ticketId || null,\n  subject: error.subject || error.ticket?.subject || null,\n  priority: error.priority || error.ticket?.priority || null,\n  requester: error.requester || error.ticket?.requester || null\n};\n\n// Build comprehensive error context\nconst errorContext = {\n  // Error identification\n  errorId: `err_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,\n  timestamp: new Date().toISOString(),\n  \n  // Execution context\n  executionId: execution.id,\n  workflowId: execution.workflow.id,\n  workflowName: execution.workflow.name,\n  mode: execution.mode,\n  \n  // Error details\n  errorNode: errorNode,\n  errorMessage: errorMessage,\n  errorStack: errorStack,\n  errorCode: errorCode,\n  \n  // Classification\n  classification: classification,\n  \n  // Ticket context\n  ticket: ticketContext,\n  \n  // Full error payload (for debugging)\n  fullError: error,\n  \n  // Metadata\n  retriesAttempted: error.retries || 0,\n  previousNodes: execution.data?.resultData?.runData || {},\n  environment: $env.NODE_ENV || 'production'\n};\n\nreturn errorContext;"
+      },
+      "id": "capture-error-context",
+      "name": "Capture Error Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300],
+      "notes": "Task 11.2: Full context capture | Task 11.7: Error classification"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.classification.type }}",
+              "operation": "equals",
+              "value2": "critical"
+            }
+          ]
+        }
+      },
+      "id": "check-severity",
+      "name": "Check Error Severity",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "-- Task 11.4: Error logging database\n-- Insert comprehensive error log with full context\nINSERT INTO error_logs (\n  error_id,\n  timestamp,\n  execution_id,\n  workflow_id,\n  workflow_name,\n  error_node,\n  error_message,\n  error_stack,\n  error_code,\n  error_type,\n  severity,\n  retryable,\n  ticket_id,\n  ticket_subject,\n  ticket_priority,\n  retries_attempted,\n  environment,\n  full_context\n) VALUES (\n  $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18::jsonb\n)\nRETURNING id;",
+        "options": {
+          "queryReplacement": "={{ [\n  $json.errorId,\n  $json.timestamp,\n  $json.executionId,\n  $json.workflowId,\n  $json.workflowName,\n  $json.errorNode,\n  $json.errorMessage,\n  $json.errorStack,\n  $json.errorCode,\n  $json.classification.type,\n  $json.classification.severity,\n  $json.classification.retryable,\n  $json.ticket.ticketId,\n  $json.ticket.subject,\n  $json.ticket.priority,\n  $json.retriesAttempted,\n  $json.environment,\n  JSON.stringify($json.fullError)\n] }}"
+        }
+      },
+      "id": "log-to-database",
+      "name": "Log Error to Database",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [850, 200],
+      "credentials": {
+        "postgres": {
+          "id": "supabase-nsw-strata",
+          "name": "Supabase - NSW Strata"
+        }
+      },
+      "notes": "Task 11.4: Error logging to database"
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.SLACK_WEBHOOK_URL }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ {\n  \"text\": \"🚨 Critical Error in NSW Strata Automation\",\n  \"blocks\": [\n    {\n      \"type\": \"header\",\n      \"text\": {\n        \"type\": \"plain_text\",\n        \"text\": \"🚨 Critical Error Alert\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Error ID:*\\n\" + $json.errorId\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Severity:*\\n\" + $json.classification.severity.toUpperCase()\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Workflow:*\\n\" + $json.workflowName\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Node:*\\n\" + $json.errorNode\n        }\n      ]\n    },\n    {\n      \"type\": \"section\",\n      \"text\": {\n        \"type\": \"mrkdwn\",\n        \"text\": \"*Error Message:*\\n```\" + $json.errorMessage + \"```\"\n      }\n    },\n    {\n      \"type\": \"section\",\n      \"fields\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Ticket ID:*\\n\" + ($json.ticket.ticketId || 'N/A')\n        },\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"*Classification:*\\n\" + $json.classification.type\n        }\n      ]\n    },\n    {\n      \"type\": \"context\",\n      \"elements\": [\n        {\n          \"type\": \"mrkdwn\",\n          \"text\": \"Time: \" + $json.timestamp + \" | Environment: \" + $json.environment\n        }\n      ]\n    }\n  ]\n} }}",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "notify-slack-critical",
+      "name": "Notify Slack - Critical",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [850, 100],
+      "notes": "Task 11.5: Slack notification for critical errors within 1 minute"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Task 11.6: Queue failed operation to Redis for retry\n// Task 11.11: Webhook retry queue implementation\n\nconst errorContext = $json;\n\n// Build retry payload\nconst retryPayload = {\n  errorId: errorContext.errorId,\n  ticketId: errorContext.ticket.ticketId,\n  workflowId: errorContext.workflowId,\n  failedNode: errorContext.errorNode,\n  originalPayload: errorContext.fullError,\n  retryCount: errorContext.retriesAttempted,\n  maxRetries: 3,\n  nextRetryAt: new Date(Date.now() + 300000).toISOString(), // 5 minutes\n  errorType: errorContext.classification.type,\n  createdAt: errorContext.timestamp,\n  expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString() // 7 days TTL\n};\n\n// Only queue if retryable\nif (errorContext.classification.retryable && errorContext.retriesAttempted < 3) {\n  return {\n    shouldQueue: true,\n    queueKey: `retry:${errorContext.classification.type}:${errorContext.errorId}`,\n    payload: retryPayload,\n    ttl: 604800 // 7 days in seconds\n  };\n}\n\nreturn {\n  shouldQueue: false,\n  reason: errorContext.classification.retryable ? 'Max retries exceeded' : 'Error not retryable',\n  payload: retryPayload\n};"
+      },
+      "id": "prepare-retry-queue",
+      "name": "Prepare Retry Queue Entry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 300],
+      "notes": "Task 11.6 & 11.11: Redis retry queue preparation"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.shouldQueue }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-should-queue",
+      "name": "Should Queue for Retry?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "set",
+        "key": "={{ $json.queueKey }}",
+        "value": "={{ JSON.stringify($json.payload) }}",
+        "expire": true,
+        "ttl": "={{ $json.ttl }}",
+        "options": {}
+      },
+      "id": "queue-to-redis",
+      "name": "Queue to Redis",
+      "type": "n8n-nodes-base.redis",
+      "typeVersion": 1,
+      "position": [1450, 250],
+      "credentials": {
+        "redis": {
+          "id": "redis-nsw-strata",
+          "name": "Redis - NSW Strata"
+        }
+      },
+      "notes": "Task 11.6: Store failed operation in Redis with 7-day TTL"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Task 11.12: Create manual intervention ticket\n// For unrecoverable errors that need human attention\n\nconst errorContext = $json;\n\nreturn {\n  subject: `[ERROR] ${errorContext.classification.type.toUpperCase()}: ${errorContext.errorNode}`,\n  description: `<h2>Error Details</h2>\n<p><strong>Error ID:</strong> ${errorContext.errorId}</p>\n<p><strong>Classification:</strong> ${errorContext.classification.type} (${errorContext.classification.severity})</p>\n<p><strong>Workflow:</strong> ${errorContext.workflowName}</p>\n<p><strong>Node:</strong> ${errorContext.errorNode}</p>\n<p><strong>Environment:</strong> ${errorContext.environment}</p>\n\n<h3>Error Message</h3>\n<pre>${errorContext.errorMessage}</pre>\n\n<h3>Affected Ticket</h3>\n<p><strong>Ticket ID:</strong> ${errorContext.ticket.ticketId || 'N/A'}</p>\n<p><strong>Subject:</strong> ${errorContext.ticket.subject || 'N/A'}</p>\n<p><strong>Priority:</strong> ${errorContext.ticket.priority || 'N/A'}</p>\n\n<h3>Classification Details</h3>\n<p>${errorContext.classification.description}</p>\n<p><strong>Retryable:</strong> ${errorContext.classification.retryable ? 'Yes' : 'No'}</p>\n<p><strong>Retries Attempted:</strong> ${errorContext.retriesAttempted}</p>\n\n<h3>Next Steps</h3>\n<ul>\n  <li>Review error logs in database</li>\n  <li>Check workflow execution: ${errorContext.executionId}</li>\n  <li>Consult runbook for ${errorContext.classification.type} errors</li>\n</ul>\n\n<p><em>Generated at ${errorContext.timestamp}</em></p>`,\n  priority: errorContext.classification.severity === 'critical' ? 4 : 3,\n  status: 2, // Open\n  tags: ['error-handler', errorContext.classification.type, 'requires-manual-intervention'],\n  custom_fields: {\n    error_id: errorContext.errorId,\n    affected_ticket_id: errorContext.ticket.ticketId,\n    workflow_id: errorContext.workflowId\n  }\n};"
+      },
+      "id": "prepare-intervention-ticket",
+      "name": "Prepare Manual Intervention Ticket",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 350],
+      "notes": "Task 11.12: Manual intervention workflow"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FRESHDESK_DOMAIN }}/api/v2/tickets",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "freshdeskApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json }}",
+        "options": {}
+      },
+      "id": "create-freshdesk-ticket",
+      "name": "Create Freshdesk Intervention Ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [1650, 350],
+      "credentials": {
+        "freshdeskApi": {
+          "id": "freshdesk-api",
+          "name": "Freshdesk API"
+        }
+      },
+      "notes": "Task 11.12: Create ticket for manual intervention"
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Capture Error Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Capture Error Context": {
+      "main": [
+        [
+          {
+            "node": "Check Error Severity",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Error Severity": {
+      "main": [
+        [
+          {
+            "node": "Log Error to Database",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Slack - Critical",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Error to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Error to Database": {
+      "main": [
+        [
+          {
+            "node": "Prepare Retry Queue Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Retry Queue Entry": {
+      "main": [
+        [
+          {
+            "node": "Should Queue for Retry?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Queue for Retry?": {
+      "main": [
+        [
+          {
+            "node": "Queue to Redis",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Manual Intervention Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Manual Intervention Ticket": {
+      "main": [
+        [
+          {
+            "node": "Create Freshdesk Intervention Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "versionId": "1.0.0",
+  "id": "error-handler",
+  "meta": {
+    "instanceId": "nsw-strata-automation"
+  },
+  "tags": [
+    {
+      "name": "error-handling",
+      "id": "error"
+    },
+    {
+      "name": "infrastructure",
+      "id": "infra"
+    }
+  ]
+}

@@ -84,7 +84,11 @@
         "authentication": "predefinedCredentialType",
         "nodeCredentialType": "freshdeskApi",
         "options": {
-          "timeout": 10000
+          "timeout": 10000,
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 5000
+          }
         }
       },
       "id": "get-ticket-details",
@@ -94,7 +98,8 @@
       "position": [
         1050,
         250
-      ]
+      ],
+      "notes": "Task 11.1: Retry enabled (3 attempts, 5s delay)"
     },
     {
       "parameters": {
@@ -172,7 +177,12 @@
         },
         "specifyBody": "json",
         "jsonBody": "={{ {\"model\": \"text-embedding-3-small\", \"input\": $json.normalizedText} }}",
-        "options": {}
+        "options": {
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 5000
+          }
+        }
       },
       "id": "generate-embedding",
       "name": "Generate Embedding (OpenAI)",
@@ -181,7 +191,8 @@
       "position": [
         1650,
         200
-      ]
+      ],
+      "notes": "Task 11.1: Retry enabled (3 attempts, 5s delay)"
     },
     {
       "parameters": {
@@ -189,7 +200,11 @@
         "query": "-- Hybrid search with lazy loading (summaries only)\n-- Task 4.14: Only fetch id, title, summary initially for performance\nWITH vector_search AS (\n  SELECT\n    id,\n    title,\n    metadata,\n    embedding <-> $1::vector AS distance,\n    1 - (embedding <-> $1::vector) AS similarity\n  FROM knowledge_base\n  WHERE metadata->>'status' = 'active'\n    -- Optional category filter\n    -- AND metadata->>'category' = $2\n  ORDER BY distance\n  LIMIT 10\n),\nkeyword_search AS (\n  SELECT\n    id,\n    title,\n    metadata,\n    similarity(COALESCE(metadata->>'summary', ''), $2) AS keyword_score\n  FROM knowledge_base\n  WHERE metadata->>'status' = 'active'\n    AND (COALESCE(metadata->>'summary', '') % $2 OR title % $2)\n  ORDER BY keyword_score DESC\n  LIMIT 10\n)\n-- Reciprocal Rank Fusion\nSELECT\n  kb.id,\n  kb.title,\n  kb.metadata->>'summary' AS summary,\n  kb.metadata->>'category' AS category,\n  kb.metadata->>'success_rate' AS success_rate,\n  kb.metadata,\n  COALESCE(vs.similarity, 0) AS vector_similarity,\n  COALESCE(ks.keyword_score, 0) AS keyword_score,\n  (\n    COALESCE(1.0 / (60 + vs_rank), 0) +\n    COALESCE(1.0 / (60 + ks_rank), 0)\n  ) AS combined_score\nFROM knowledge_base kb\nLEFT JOIN (\n  SELECT id, similarity, ROW_NUMBER() OVER (ORDER BY distance) AS vs_rank\n  FROM vector_search\n) vs ON kb.id = vs.id\nLEFT JOIN (\n  SELECT id, keyword_score, ROW_NUMBER() OVER (ORDER BY keyword_score DESC) AS ks_rank\n  FROM keyword_search\n) ks ON kb.id = ks.id\nWHERE vs.id IS NOT NULL OR ks.id IS NOT NULL\nORDER BY combined_score DESC\nLIMIT 5;",
         "options": {
           "queryReplacement": "={{ [$json.embedding, $json.normalizedText] }}",
-          "nodeErrorWorkflow": "fallback-keyword-search"
+          "nodeErrorWorkflow": "fallback-keyword-search",
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 5000
+          }
         }
       },
       "id": "hybrid-search",
@@ -205,14 +220,19 @@
           "id": "supabase-nsw-strata",
           "name": "Supabase - NSW Strata"
         }
-      }
+      },
+      "notes": "Task 11.1: Retry enabled (3 attempts, 5s delay)"
     },
     {
       "parameters": {
         "operation": "executeQuery",
         "query": "-- Task 4.15: Fallback keyword-only search when vector search fails\n-- Uses only pg_trgm trigram similarity for keyword matching\nSELECT\n  id,\n  title,\n  metadata->>'summary' AS summary,\n  metadata->>'category' AS category,\n  metadata->>'success_rate' AS success_rate,\n  metadata,\n  0 AS vector_similarity,\n  similarity(COALESCE(metadata->>'summary', title), $1) AS keyword_score,\n  similarity(COALESCE(metadata->>'summary', title), $1) AS combined_score\nFROM knowledge_base\nWHERE metadata->>'status' = 'active'\n  AND (COALESCE(metadata->>'summary', '') % $1 OR title % $1)\nORDER BY keyword_score DESC\nLIMIT 5;",
         "options": {
-          "queryReplacement": "={{ [$json.normalizedText] }}"
+          "queryReplacement": "={{ [$json.normalizedText] }}",
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 5000
+          }
         }
       },
       "id": "fallback-keyword-search",
@@ -229,7 +249,7 @@
           "name": "Supabase - NSW Strata"
         }
       },
-      "notes": "Fallback search when hybrid search fails - uses trigram similarity only"
+      "notes": "Fallback search when hybrid search fails - uses trigram similarity only | Task 11.1: Retry enabled (3 attempts, 5s delay)"
     },
     {
       "parameters": {
@@ -284,7 +304,11 @@
         "operation": "executeQuery",
         "query": "-- Lazy loading: Fetch full content for selected knowledge entries\n-- Only called when routing path needs full content\nSELECT\n  id,\n  title,\n  content,\n  metadata,\n  search_keywords,\n  created_at,\n  updated_at\nFROM knowledge_base\nWHERE id = ANY($1::uuid[]);",
         "options": {
-          "queryReplacement": "={{ [Array.from(new Set($json.knowledge.map(k => k.id)))] }}"
+          "queryReplacement": "={{ [Array.from(new Set($json.knowledge.map(k => k.id)))] }}",
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 5000
+          }
         }
       },
       "id": "fetch-full-content",
@@ -301,7 +325,7 @@
           "name": "Supabase - NSW Strata"
         }
       },
-      "notes": "Lazy loading: Fetches full content only when needed by routing paths"
+      "notes": "Lazy loading: Fetches full content only when needed by routing paths | Task 11.1: Retry enabled (3 attempts, 5s delay)"
     },
     {
       "parameters": {
@@ -336,7 +360,11 @@
         "specifyBody": "json",
         "jsonBody": "={{ {\"body\": $json.responseBody, \"from_email\": $env.FRESHDESK_FROM_EMAIL || \"support@company.com\"} }}",
         "options": {
-          "timeout": 10000
+          "timeout": 10000,
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 5000
+          }
         }
       },
       "id": "post-reply-freshdesk",
@@ -353,7 +381,7 @@
           "name": "Freshdesk API"
         }
       },
-      "notes": "Task 5.10: Post reply to Freshdesk ticket"
+      "notes": "Task 5.10: Post reply to Freshdesk ticket | Task 11.1: Retry enabled (3 attempts, 5s delay)"
     },
     {
       "parameters": {
@@ -374,7 +402,11 @@
         "specifyBody": "json",
         "jsonBody": "={{ {\"status\": $json.status, \"tags\": $json.tags, \"custom_fields\": {\"knowledge_id\": $json.knowledgeId, \"confidence\": $json.confidence, \"routing_path\": $json.routingPath}} }}",
         "options": {
-          "timeout": 10000
+          "timeout": 10000,
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 5000
+          }
         }
       },
       "id": "update-ticket-status",
@@ -391,7 +423,7 @@
           "name": "Freshdesk API"
         }
       },
-      "notes": "Task 5.11 & 5.12: Update ticket status and append tags"
+      "notes": "Task 5.11 & 5.12: Update ticket status and append tags | Task 11.1: Retry enabled (3 attempts, 5s delay)"
     },
     {
       "parameters": {
@@ -467,7 +499,11 @@
         "operation": "executeQuery",
         "query": "-- Task 5.7: Track routing path statistics\n-- Insert metrics for dashboard and monthly analysis\nINSERT INTO system_metrics (metric_name, metric_value, category, subcategory, metadata, timestamp)\nVALUES \n  ('routing_path_count', 1, 'routing', $1, jsonb_build_object(\n    'ticket_id', $2,\n    'confidence', $3,\n    'knowledge_count', $4,\n    'priority', $5,\n    'category_hints', $6\n  ), NOW()),\n  ('routing_confidence', $3, 'quality', 'retrieval', jsonb_build_object(\n    'routing_path', $1,\n    'ticket_id', $2\n  ), NOW());\n\n-- Also update path counters (for Task 5.13 statistics)\nINSERT INTO system_metrics (metric_name, metric_value, category, subcategory, metadata, timestamp)\nVALUES ('path_' || $1 || '_total', 1, 'routing', 'counter', '{}'::jsonb, NOW())\nON CONFLICT DO NOTHING;",
         "options": {
-          "queryReplacement": "={{ [\n  $json.routingPath,\n  $json.ticketId,\n  $json.confidence,\n  $json.knowledgeIds?.length || 0,\n  $json.priority,\n  JSON.stringify($json.ticket?.categoryHints || [])\n] }}"
+          "queryReplacement": "={{ [\n  $json.routingPath,\n  $json.ticketId,\n  $json.confidence,\n  $json.knowledgeIds?.length || 0,\n  $json.priority,\n  JSON.stringify($json.ticket?.categoryHints || [])\n] }}",
+          "retry": {
+            "maxTries": 3,
+            "waitBetweenTries": 5000
+          }
         }
       },
       "id": "track-routing-stats",
@@ -484,7 +520,7 @@
           "name": "Supabase - NSW Strata"
         }
       },
-      "notes": "Task 5.7 & 5.13: Track routing statistics for monthly analysis"
+      "notes": "Task 5.7 & 5.13: Track routing statistics for monthly analysis | Task 11.1: Retry enabled (3 attempts, 5s delay)"
     }
   ],
   "pinData": {},

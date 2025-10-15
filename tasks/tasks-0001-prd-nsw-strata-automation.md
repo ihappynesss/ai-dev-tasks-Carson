@@ -14,10 +14,11 @@
 - `nsw-strata-automation/config/worker-scaling.md` - Complete guide for configuring and scaling n8n workers for 200+ concurrent tickets
 - `nsw-strata-automation/config/webhook-infrastructure.md` - Complete guide for webhook receiver infrastructure with instant acknowledgment and async processing
 - `nsw-strata-automation/config/environments.md` - Complete environment configuration guide with deployment procedures
+- `nsw-strata-automation/config/error-handling-runbook.md` - Comprehensive error handling and recovery runbook with circuit breaker pattern, fallback strategies, error classification, dashboard queries, pattern detection, and common scenario procedures
 - `nsw-strata-automation/CONTRIBUTING.md` - Git workflow, branching strategy, and contribution guidelines
 - `nsw-strata-automation/workflows/README.md` - Workflow documentation with export/import procedures
 - `nsw-strata-automation/database/README.md` - Database schema and migration documentation
-- `nsw-strata-automation/database/schema.sql` - Complete PostgreSQL schema with vector search and indexes
+- `nsw-strata-automation/database/schema.sql` - Complete PostgreSQL schema with vector search, error logging (error_logs table with classification and context), and indexes
 - `nsw-strata-automation/database/SUPABASE-SETUP.md` - Comprehensive Supabase setup guide with step-by-step instructions
 - `nsw-strata-automation/knowledge/README.md` - Knowledge base structure and entry management guide
 - `nsw-strata-automation/knowledge/maintenance-repairs/common-property/001-roof-leak.md` - Knowledge entry for roof leaks
@@ -28,8 +29,9 @@
 - `nsw-strata-automation/knowledge/information-requests/general/001-strata-records-access.md` - Knowledge entry for records access
 - `nsw-strata-automation/.github/workflows/knowledge-versioning.yml` - GitHub Actions workflow for automated knowledge versioning
 - `nsw-strata-automation/backup-database.sh` - Database backup script with 30-day retention
-- `nsw-strata-automation/workflows/main-ticket-processor.json` - Main n8n workflow for processing new Freshdesk tickets with webhook receiver, entity extraction, NSW categorization, hybrid search, and 5-path routing
+- `nsw-strata-automation/workflows/main-ticket-processor.json` - Main n8n workflow for processing new Freshdesk tickets with webhook receiver, entity extraction, NSW categorization, hybrid search, 5-path routing, and node-level retry (3 attempts, 5s delay)
 - `nsw-strata-automation/workflows/nsw-categorization-node.js` - NSW Strata categorization system with 8 primary categories, subcategories, priority logic, SSMA 2015 compliance, model by-laws, and 2025 reforms
+- `nsw-strata-automation/workflows/error-handler.json` - Comprehensive error handling workflow with classification (transient/systematic/critical), error logging, Slack notifications, Redis retry queue, and manual intervention ticket creation
 - `nsw-strata-automation/workflows/reply-handler.json` - Workflow for handling customer replies with sentiment analysis, multi-turn tracking, and escalation logic
 - `nsw-strata-automation/workflows/scheduled-maintenance.json` - Scheduled workflow (2 AM daily) for duplicate detection, success rate calculation, and reporting
 - `nsw-strata-automation/workflows/manual-trigger.json` - Manual trigger workflow for on-demand ticket reprocessing and testing
@@ -224,22 +226,22 @@
   - [x] 10.14 Implement human approval queue for generated entries
   - [x] 10.15 Create GitHub Actions workflow for knowledge versioning
 
-- [ ] 11.0 Implement comprehensive error handling and recovery
-  - [ ] 11.1 Configure node-level retry with 3 attempts and 5-second delays
-  - [ ] 11.2 Create workflow-level error trigger with full context capture
-  - [ ] 11.3 Implement system-level fallbacks for graceful degradation
-  - [ ] 11.4 Create error logging database with ticket ID, error type, and payload
-  - [ ] 11.5 Configure Slack webhook for critical failure notifications within 1 minute
-  - [ ] 11.6 Implement Redis queue for failed operations with 7-day TTL
-  - [ ] 11.7 Create error classification system (transient, systematic, critical)
-  - [ ] 11.8 Implement circuit breaker pattern for failing services
-  - [ ] 11.9 Configure fallback to keyword search when vector search fails
-  - [ ] 11.10 Create fallback to GPT-4o when Claude API fails
-  - [ ] 11.11 Implement webhook retry queue when Freshdesk is unavailable
-  - [ ] 11.12 Create manual intervention workflow for unrecoverable errors
-  - [ ] 11.13 Implement error recovery dashboard with statistics
-  - [ ] 11.14 Configure automated error pattern detection
-  - [ ] 11.15 Create runbook procedures for common error scenarios
+- [x] 11.0 Implement comprehensive error handling and recovery
+  - [x] 11.1 Configure node-level retry with 3 attempts and 5-second delays
+  - [x] 11.2 Create workflow-level error trigger with full context capture
+  - [x] 11.3 Implement system-level fallbacks for graceful degradation
+  - [x] 11.4 Create error logging database with ticket ID, error type, and payload
+  - [x] 11.5 Configure Slack webhook for critical failure notifications within 1 minute
+  - [x] 11.6 Implement Redis queue for failed operations with 7-day TTL
+  - [x] 11.7 Create error classification system (transient, systematic, critical)
+  - [x] 11.8 Implement circuit breaker pattern for failing services
+  - [x] 11.9 Configure fallback to keyword search when vector search fails
+  - [x] 11.10 Create fallback to GPT-4o when Claude API fails
+  - [x] 11.11 Implement webhook retry queue when Freshdesk is unavailable
+  - [x] 11.12 Create manual intervention workflow for unrecoverable errors
+  - [x] 11.13 Implement error recovery dashboard with statistics
+  - [x] 11.14 Configure automated error pattern detection
+  - [x] 11.15 Create runbook procedures for common error scenarios
 
 - [ ] 12.0 Set up monitoring, alerting, and reporting systems
   - [ ] 12.1 Configure Prometheus metrics collection for n8n workflows
