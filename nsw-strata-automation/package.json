@@ -8,7 +8,9 @@
     "test:watch": "jest --watch",
     "test:unit": "jest tests/workflow-tests/unit --coverage",
     "test:integration": "jest tests/workflow-tests/integration --coverage",
+    "test:performance": "jest tests/performance --verbose",
     "test:node": "jest tests/workflow-tests/unit/nodes",
+    "generate:testdata": "node tests/performance/generate-test-data.js",
     "lint": "eslint ."
   },
   "keywords": [

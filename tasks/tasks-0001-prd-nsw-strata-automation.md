@@ -90,6 +90,9 @@
 - `tests/workflow-tests/integration/error-recovery.test.js` - Error recovery and retry mechanism integration tests (19 tests, Task 14.12)
 - `tests/workflow-tests/integration/fixtures/webhook-payloads.js` - Realistic webhook payload fixtures for 7 NSW strata scenarios
 - `tests/workflow-tests/integration/helpers/freshdesk-mock.js` - Freshdesk API mock server helper using nock for HTTP interception
+- `tests/performance/README.md` - Performance testing documentation with benchmarks, scalability projections, and optimization strategies (Task 14.3)
+- `tests/performance/vector-search-performance.test.js` - Vector search performance tests with 10K/50K/100K entries, HNSW index validation (18 tests)
+- `tests/performance/generate-test-data.js` - Test data generator for 10K+ knowledge base entries with embeddings and NSW strata content
 - `package.json` - Node.js project configuration with Jest test framework and dependencies
 - `docs/deployment-guide.md` - Production deployment documentation
 - `docs/api-documentation.md` - API integration documentation
@@ -323,7 +326,7 @@
 - [ ] 14.0 Perform testing and quality assurance
   - [x] 14.1 Create unit tests for each workflow node configuration
   - [x] 14.2 Implement integration tests for Freshdesk webhook handling
-  - [ ] 14.3 Test Supabase vector search performance with 10K+ entries
+  - [x] 14.3 Test Supabase vector search performance with 10K+ entries
   - [ ] 14.4 Validate similarity threshold accuracy with test datasets
   - [ ] 14.5 Test all 5 routing paths with representative tickets
   - [ ] 14.6 Validate AI API fallback mechanisms
