@@ -129,21 +129,22 @@ groups:
       # ==================================================
       # Note: This requires custom metrics from workflow execution tracking
       # The actual SLA tracking needs to be implemented in n8n workflows
+      # Commented out until custom metrics are implemented
 
-      - alert: CriticalTicketSLABreach
-        expr: |
-          (time() - ticket_created_timestamp{priority="critical"}) > 900
-          and
-          ticket_status != "resolved"
-        for: 1m
-        labels:
-          severity: critical
-          component: sla
-          task: task-12.12
-        annotations:
-          summary: "Critical ticket SLA breach"
-          description: "Ticket {{ $labels.ticket_id }} has exceeded 15-minute SLA for critical priority"
-          runbook: "https://docs.nsw-strata-automation.com/runbooks/sla-breach"
+      # - alert: CriticalTicketSLABreach
+      #   expr: |
+      #     (time() - ticket_created_timestamp{priority="critical"}) > 900
+      #     and
+      #     ticket_status != "resolved"
+      #   for: 1m
+      #   labels:
+      #     severity: critical
+      #     component: sla
+      #     task: task-12.12
+      #   annotations:
+      #     summary: "Critical ticket SLA breach"
+      #     description: "Ticket {{ $labels.ticket_id }} has exceeded 15-minute SLA for critical priority"
+      #     runbook: "https://docs.nsw-strata-automation.com/runbooks/sla-breach"
 
       # Alternative: Average response time for critical tickets
       - alert: HighCriticalTicketResponseTime
