@@ -94,6 +94,7 @@
 - `tests/performance/vector-search-performance.test.js` - Vector search performance tests with 10K/50K/100K entries, HNSW index validation (18 tests)
 - `tests/performance/generate-test-data.js` - Test data generator for 10K+ knowledge base entries with embeddings and NSW strata content
 - `tests/validation/routing-validation.test.js` - Routing decision validation tests with similarity threshold accuracy and all 5 paths (19 tests, Tasks 14.4-14.5)
+- `tests/validation/ai-api-fallback.test.js` - AI API fallback mechanism tests validating Claude → GPT-4o → GPT-4o Mini hierarchy with error classification and cost tracking (24 tests, Task 14.6)
 - `package.json` - Node.js project configuration with Jest test framework and dependencies
 - `docs/deployment-guide.md` - Production deployment documentation
 - `docs/api-documentation.md` - API integration documentation
@@ -330,7 +331,7 @@
   - [x] 14.3 Test Supabase vector search performance with 10K+ entries
   - [x] 14.4 Validate similarity threshold accuracy with test datasets
   - [x] 14.5 Test all 5 routing paths with representative tickets
-  - [ ] 14.6 Validate AI API fallback mechanisms
+  - [x] 14.6 Validate AI API fallback mechanisms
   - [ ] 14.7 Test progressive learning phase transitions
   - [ ] 14.8 Validate NSW strata categorization accuracy (85% target)
   - [ ] 14.9 Test multi-turn conversation handling
