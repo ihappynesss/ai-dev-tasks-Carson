@@ -85,6 +85,11 @@
 - `tests/workflow-tests/unit/nodes/database-node.test.js` - Unit tests for Supabase vector search, hybrid search, and query optimization (Task 4.0)
 - `tests/workflow-tests/unit/nodes/routing-decision-node.test.js` - Unit tests for 5-path routing decision engine and threshold logic (Task 5.0)
 - `tests/workflow-tests/unit/nodes/error-handling-node.test.js` - Unit tests for error classification, circuit breaker, and fallback strategies (Task 11.0)
+- `tests/workflow-tests/integration/README.md` - Integration testing documentation with mock server patterns and test coverage details (Task 14.2)
+- `tests/workflow-tests/integration/webhook-integration.test.js` - End-to-end webhook integration tests with Freshdesk API mocking (30 tests)
+- `tests/workflow-tests/integration/error-recovery.test.js` - Error recovery and retry mechanism integration tests (19 tests, Task 14.12)
+- `tests/workflow-tests/integration/fixtures/webhook-payloads.js` - Realistic webhook payload fixtures for 7 NSW strata scenarios
+- `tests/workflow-tests/integration/helpers/freshdesk-mock.js` - Freshdesk API mock server helper using nock for HTTP interception
 - `package.json` - Node.js project configuration with Jest test framework and dependencies
 - `docs/deployment-guide.md` - Production deployment documentation
 - `docs/api-documentation.md` - API integration documentation
@@ -317,7 +322,7 @@
 
 - [ ] 14.0 Perform testing and quality assurance
   - [x] 14.1 Create unit tests for each workflow node configuration
-  - [ ] 14.2 Implement integration tests for Freshdesk webhook handling
+  - [x] 14.2 Implement integration tests for Freshdesk webhook handling
   - [ ] 14.3 Test Supabase vector search performance with 10K+ entries
   - [ ] 14.4 Validate similarity threshold accuracy with test datasets
   - [ ] 14.5 Test all 5 routing paths with representative tickets
